@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { App } from '@/core/App';
 
 import GatewayConnectionService from '../gatewayConnectionSrv';
+import * as discovery from '../gatewayDiscovery';
 
 const { getShellInfoMock, execFileMock } = vi.hoisted(() => ({
   getShellInfoMock: vi.fn(),
@@ -35,6 +36,33 @@ const createClient = () =>
   ({ sendSystemInfoResponse: vi.fn() }) as unknown as GatewayClient & {
     sendSystemInfoResponse: ReturnType<typeof vi.fn>;
   };
+
+describe('account-scoped device gateway discovery', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('keeps a self-host login offline when its server advertises no device gateway', async () => {
+    vi.spyOn(discovery, 'discoverDeviceGateway').mockResolvedValue({ status: 'absent' });
+    const service = new GatewayConnectionService({
+      storeManager: { get: vi.fn() },
+    } as unknown as App);
+    const result = await service['resolveEndpoint']('https://lobe.muyimusic.net');
+    expect(result).toEqual({ ok: false, reason: 'not_configured' });
+  });
+
+  it('uses the device gateway advertised by the account server', async () => {
+    vi.spyOn(discovery, 'discoverDeviceGateway').mockResolvedValue({
+      status: 'advertised',
+      url: 'https://device.example.org',
+    });
+    const service = new GatewayConnectionService({
+      storeManager: { get: vi.fn() },
+    } as unknown as App);
+    expect(await service['resolveEndpoint']('https://lobe.muyimusic.net')).toEqual({
+      ok: true,
+      endpoint: { source: 'server', url: 'https://device.example.org' },
+    });
+  });
+});
 
 describe('GatewayConnectionService system_info_request', () => {
   let service: GatewayConnectionService;

@@ -10,6 +10,8 @@ export type GatewayConnectionErrorCode =
   | 'auth_failed'
   /** The current server's configuration could not be loaded. */
   | 'config_unavailable'
+  /** The self-hosted server has no advertised or manually configured device gateway. */
+  | 'gateway_not_configured'
   /** The saved, advertised or overridden gateway address is not a usable URL. */
   | 'invalid_gateway_url'
   | 'not_signed_in';

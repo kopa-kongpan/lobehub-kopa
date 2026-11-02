@@ -3,6 +3,7 @@
   "gateway.error.authRejected": "设备网关拒绝了当前登录凭证。请重试或重新登录；若仍有问题，请联系服务器管理员检查网关配置。",
   "gateway.error.configUnavailable": "无法读取当前服务器的配置。请检查网络后重试。",
   "gateway.error.invalidAddress": "设备网关地址无效。请检查桌面端的环境变量或已有配置，或联系服务器管理员检查网关地址。",
+  "gateway.error.notConfigured": "请在连接设置中填写设备网关地址，再连接这台设备。",
   "gateway.error.notSignedIn": "登录后即可连接此设备。",
   "gateway.manageDevices": "管理设备",
   "gateway.retry": "重试",

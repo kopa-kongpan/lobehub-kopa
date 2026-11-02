@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 
-import { OFFICIAL_DEVICE_GATEWAY_URL } from '@lobechat/const/url';
+import { isOfficialCloudServer, OFFICIAL_DEVICE_GATEWAY_URL } from '@lobechat/const/url';
 import type {
   EnrollWorkspaceParams,
   EnrollWorkspaceResult,
@@ -21,7 +21,7 @@ import type {
 } from '@lobechat/device-gateway-client';
 import {
   type DeviceGatewayEndpoint,
-  type DeviceGatewayResolutionWithDefault,
+  type DeviceGatewayResolution,
   deviceGatewayServerKey,
   resolveDeviceGatewayEndpoint,
 } from '@lobechat/device-gateway-client/endpoint';
@@ -197,11 +197,14 @@ const CANCELLED: GatewayConnectResult = {
 };
 
 const describeResolutionFailure = (
-  resolution: Extract<DeviceGatewayResolutionWithDefault, { ok: false }>,
+  resolution: Extract<DeviceGatewayResolution, { ok: false }>,
 ): GatewayConnectionError => {
   switch (resolution.reason) {
     case 'discovery_failed': {
       return { code: 'config_unavailable', detail: resolution.detail };
+    }
+    case 'not_configured': {
+      return { code: 'gateway_not_configured' };
     }
     case 'invalid_advertised_url':
     case 'invalid_manual':
@@ -631,7 +634,7 @@ export default class GatewayConnectionService extends ServiceModule {
     }
 
     const userId = this.extractUserIdFromToken(token);
-    const endpoint: DeviceGatewayResolutionWithDefault =
+    const endpoint: DeviceGatewayResolution =
       reuse && reuse.serverKey === serverKey && reuse.userId === userId
         ? { endpoint: reuse.endpoint, ok: true }
         : await this.resolveEndpoint(serverUrl);
@@ -1562,25 +1565,17 @@ export default class GatewayConnectionService extends ServiceModule {
 
   // ─── Gateway Address ───
 
-  /**
-   * Resolve the gateway for `serverUrl`, first match wins:
-   *   1. `DEVICE_GATEWAY_URL` (dev: a local `wrangler dev` gateway), whatever
-   *      its value
-   *   2. the address saved in settings (`gatewayUrl`), unless it is the official
-   *      gateway itself
-   *   3. the address this server advertises
-   *   4. the official gateway, when the server answered without one
-   * The server is asked only for 3–4. A failed discovery is reported, never
-   * replaced by the default: that would send this server's token elsewhere.
-   */
-  private async resolveEndpoint(serverUrl: string): Promise<DeviceGatewayResolutionWithDefault> {
+  /** Self-hosted account credentials go only to an explicitly configured or advertised gateway. */
+  private async resolveEndpoint(serverUrl: string): Promise<DeviceGatewayResolution> {
     const controller = new AbortController();
     this.discoveryAbort = controller;
     try {
       return await resolveDeviceGatewayEndpoint({
         discover: () => discoverDeviceGateway(serverUrl, controller.signal),
         manualUrl: this.getSavedGatewayUrl(),
-        officialGatewayUrl: OFFICIAL_DEVICE_GATEWAY_URL,
+        officialGatewayUrl: isOfficialCloudServer(serverUrl)
+          ? OFFICIAL_DEVICE_GATEWAY_URL
+          : undefined,
         override: getDesktopEnv().DEVICE_GATEWAY_URL,
       });
     } finally {
@@ -1591,8 +1586,7 @@ export default class GatewayConnectionService extends ServiceModule {
   /**
    * The address saved in settings, or `undefined` when none is. Older installs
    * persisted the official gateway as a default, so that exact value reads as
-   * unset without rewriting the stored value: the server's own
-   * address, then the official gateway, apply.
+   * unset without rewriting the stored value. Discovery then runs for the current server.
    */
   private getSavedGatewayUrl(): string | undefined {
     const saved = this.app.storeManager.get('gatewayUrl');

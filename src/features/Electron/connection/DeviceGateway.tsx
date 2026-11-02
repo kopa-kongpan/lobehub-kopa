@@ -18,6 +18,7 @@ import { electronSyncSelectors } from '@/store/electron/selectors';
 const ERROR_MESSAGE_KEYS = {
   auth_failed: 'gateway.error.authRejected',
   config_unavailable: 'gateway.error.configUnavailable',
+  gateway_not_configured: 'gateway.error.notConfigured',
   invalid_gateway_url: 'gateway.error.invalidAddress',
   not_signed_in: 'gateway.error.notSignedIn',
 } as const satisfies Record<GatewayConnectionErrorCode, string>;
@@ -177,11 +178,13 @@ const DeviceGateway = memo<DeviceGatewayProps>(({ workspaceScoped }) => {
             {t(ERROR_MESSAGE_KEYS[failure.code])}
           </span>
           <Flexbox horizontal gap={4}>
-            {failure.code !== 'not_signed_in' && failure.code !== 'invalid_gateway_url' && (
-              <Button outdent size="small" type="text" onClick={() => void connectGateway()}>
-                {t('gateway.retry')}
-              </Button>
-            )}
+            {failure.code !== 'not_signed_in' &&
+              failure.code !== 'gateway_not_configured' &&
+              failure.code !== 'invalid_gateway_url' && (
+                <Button outdent size="small" type="text" onClick={() => void connectGateway()}>
+                  {t('gateway.retry')}
+                </Button>
+              )}
           </Flexbox>
         </Flexbox>
       )}
