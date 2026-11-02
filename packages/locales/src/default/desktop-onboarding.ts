@@ -94,6 +94,7 @@ export default {
   'screen5.actions.connecting': 'Connecting...',
   'screen5.actions.done': 'Done',
   'screen5.actions.signInCloud': 'Sign in to LobeHub Cloud',
+  'screen5.actions.signInProject': 'Sign in or register',
   'screen5.actions.signOut': 'Sign out',
   'screen5.actions.signingIn': 'Signing in...',
   'screen5.actions.signingOut': 'Signing out...',
@@ -115,6 +116,9 @@ export default {
   'screen5.methods.selfhost.description': 'Connect to your own LobeHub server instance',
   'screen5.methods.selfhost.name': 'Self-hosted Instance',
   'screen5.navigation.next': 'Get Started',
+  'screen5.project.description':
+    'Sign in or register at {{url}} in your browser, then return to this app.',
+  'screen5.project.title': 'Sign in to LobeHub Kopa',
   'screen5.selfhost.endpointPlaceholder': 'Enter your server URL (e.g., https://your-server.com)',
   'screen5.status.cloud.title': 'Connected to LobeHub Cloud',
   'screen5.status.description':

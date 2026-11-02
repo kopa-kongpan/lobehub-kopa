@@ -141,8 +141,8 @@ describe('useAuthRequiredModal', () => {
 
     expect(electronStore.current.clearRemoteServerSyncError).toHaveBeenCalled();
     expect(electronStore.current.connectRemoteServer).toHaveBeenCalledWith({
-      remoteServerUrl: undefined,
-      storageMode: 'cloud',
+      remoteServerUrl: 'https://lobe.muyimusic.net',
+      storageMode: 'selfHost',
     });
 
     act(() => {

@@ -1,5 +1,6 @@
 'use client';
 
+import { getDesktopSignInTarget } from '@lobechat/const/desktop';
 import { memo, useEffect } from 'react';
 
 import { getDesktopOnboardingCompleted } from '@/features/DesktopOnboarding/storage';
@@ -36,7 +37,7 @@ const DesktopAutoOidcOnFirstOpen = memo(() => {
     // If already connected, don't auto-trigger
     if (dataSyncConfig.active) return;
 
-    // If not in cloud mode, don't auto-trigger
+    // Preserve the first-open prompt for legacy cloud preferences, using the project login.
     if (dataSyncConfig.storageMode !== 'cloud') return;
 
     if (getDesktopAutoOidcFirstOpenHandled()) return;
@@ -44,14 +45,8 @@ const DesktopAutoOidcOnFirstOpen = memo(() => {
     if (!setDesktopAutoOidcFirstOpenHandled()) return;
 
     // This will trigger IPC -> main process -> `shell.openExternal(/oidc/auth...)`.
-    connectRemoteServer({ remoteServerUrl: dataSyncConfig.remoteServerUrl, storageMode: 'cloud' });
-  }, [
-    connectRemoteServer,
-    dataSyncConfig.active,
-    dataSyncConfig.remoteServerUrl,
-    dataSyncConfig.storageMode,
-    isInitRemoteServerConfig,
-  ]);
+    connectRemoteServer(getDesktopSignInTarget(dataSyncConfig));
+  }, [connectRemoteServer, dataSyncConfig, isInitRemoteServerConfig]);
 
   return null;
 });

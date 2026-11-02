@@ -5,9 +5,10 @@ import type { App } from '@/core/App';
 
 import RemoteServerConfigCtr from '../RemoteServerConfigCtr';
 
-const { ipcMainHandleMock, mockFetch } = vi.hoisted(() => ({
+const { ipcMainHandleMock, mockFetch, mockHeadersHook } = vi.hoisted(() => ({
   ipcMainHandleMock: vi.fn(),
   mockFetch: vi.fn(),
+  mockHeadersHook: vi.fn(),
 }));
 
 vi.mock('@/utils/net-fetch', () => ({
@@ -16,6 +17,7 @@ vi.mock('@/utils/net-fetch', () => ({
 
 // Mock electron
 vi.mock('electron', () => ({
+  session: { fromPartition: () => ({ webRequest: { onBeforeSendHeaders: mockHeadersHook } }) },
   app: {
     getVersion: vi.fn(() => '1.2.3'),
   },
@@ -213,6 +215,7 @@ describe('RemoteServerConfigCtr', () => {
         storageMode: 'selfHost',
       });
       expect(mockStoreManager.set).toHaveBeenCalledTimes(1);
+      expect(mockStoreManager.delete).toHaveBeenCalledWith('encryptedTokens');
       expect(mockGatewayConnectionSrv.disconnect).toHaveBeenCalledTimes(1);
     });
 
@@ -237,7 +240,8 @@ describe('RemoteServerConfigCtr', () => {
       expect(result).toBe(true);
       expect(mockStoreManager.set).toHaveBeenCalledWith('dataSyncConfig', {
         active: false,
-        storageMode: 'cloud',
+        remoteServerUrl: 'https://lobe.muyimusic.net',
+        storageMode: 'selfHost',
       });
       expect(mockStoreManager.delete).toHaveBeenCalledWith('encryptedTokens');
     });
@@ -562,7 +566,41 @@ describe('RemoteServerConfigCtr', () => {
     });
   });
 
+  it('does not attach a project token to an official subscription webview request', async () => {
+    mockStoreManager.get.mockReturnValue({
+      active: true,
+      remoteServerUrl: 'https://lobe.muyimusic.net',
+      storageMode: 'selfHost',
+    });
+    const getToken = vi.spyOn(controller, 'getAccessToken').mockResolvedValue('project-test-token');
+    await controller.setupSubscriptionWebviewSession({ partition: 'test-subscription' });
+    const callback = vi.fn();
+    await mockHeadersHook.mock.lastCall![1](
+      { requestHeaders: {}, url: 'https://lobehub.com/subscription' },
+      callback,
+    );
+    expect(callback.mock.calls[0][0].requestHeaders).not.toHaveProperty('Oidc-Auth');
+    expect(getToken).not.toHaveBeenCalled();
+  });
+
   describe('refreshAccessToken', () => {
+    it('ignores a late refresh response after credentials were cleared', async () => {
+      mockStoreManager.get.mockImplementation((key) =>
+        key === 'dataSyncConfig' ? { active: true, storageMode: 'cloud' } : null,
+      );
+      await controller.saveTokens('old-access', 'old-refresh');
+      const deferred = Promise.withResolvers<Response>();
+      mockFetch.mockReturnValue(deferred.promise);
+      const pending = controller.refreshAccessToken();
+      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalled());
+      await controller.clearTokens();
+      deferred.resolve(
+        Response.json({ access_token: 'stale-access', refresh_token: 'stale-refresh' }),
+      );
+      expect((await pending).success).toBe(false);
+      expect(await controller.getAccessToken()).toBeNull();
+    });
+
     it('should return error when remote server is not active', async () => {
       mockStoreManager.get.mockImplementation((key) => {
         if (key === 'dataSyncConfig') {

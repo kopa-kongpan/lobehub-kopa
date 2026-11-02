@@ -33,6 +33,7 @@ vi.mock('react-i18next', () => ({
         'screen5.actions.cancel': 'Cancel',
         'screen5.actions.connectToServer': 'Connect to server',
         'screen5.actions.done': 'Done',
+        'screen5.actions.signInProject': 'Sign in or register',
         'screen5.actions.signInCloud': 'Sign in Cloud',
         'screen5.actions.signOut': 'Sign out',
         'screen5.actions.tryAgain': 'Try again',
@@ -135,6 +136,28 @@ afterEach(() => {
 });
 
 describe('Desktop onboarding LoginStep', () => {
+  it.each([
+    [{ storageMode: 'cloud' }, 'https://lobe.muyimusic.net'],
+    [{ storageMode: 'selfHost', remoteServerUrl: 'invalid-server' }, 'https://lobe.muyimusic.net'],
+    [
+      { remoteServerUrl: 'https://team.example.org', storageMode: 'selfHost' },
+      'https://team.example.org',
+    ],
+  ] as const)(
+    'opens the project or previously configured self-host for %o',
+    async (config, expected) => {
+      mockElectronState.dataSyncConfig = config;
+      await renderLoginStep();
+
+      expect(screen.queryByRole('button', { name: 'Sign in Cloud' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Sign in or register' }));
+      expect(mockElectronState.connectRemoteServer).toHaveBeenCalledWith({
+        remoteServerUrl: expected,
+        storageMode: 'selfHost',
+      });
+    },
+  );
+
   it('renders a focused success state without an authorization banner', async () => {
     await renderLoginStep();
 

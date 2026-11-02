@@ -1,3 +1,4 @@
+import { getDesktopSignInTarget } from '@lobechat/const/desktop';
 import {
   type DataSyncConfig,
   type ElectronAppState,
@@ -57,7 +58,7 @@ export const initialState: ElectronState = {
   ...tabPagesInitialState,
   appState: {},
   appTrayVisible: true,
-  dataSyncConfig: { storageMode: 'cloud' },
+  dataSyncConfig: getDesktopSignInTarget(),
   desktopHotkeys: {},
   gatewayConnectionStatus: 'disconnected',
   gatewayStableDeviceIdMap: {},
