@@ -30,6 +30,7 @@ import { filterToolIds } from '@/helpers/toolFilters';
 
 import { type AgentStoreState } from '../initialState';
 import { builtinAgentSelectors } from './builtinAgentSelectors';
+import { getDesktopInboxConfig } from './desktopInboxConfig';
 
 // ==========   Meta   ============== //
 
@@ -134,16 +135,16 @@ const getAgentFullBodyArtworkById =
 
 const inboxAgentConfig = (s: AgentStoreState) => {
   const id = builtinAgentSelectors.inboxAgentId(s);
-  // Server returns inbox config already merged with DEFAULT_AGENT_CONFIG and serverDefaultAgentConfig,
-  // so we can directly use it. Fallback to DEFAULT_AGENT_CONFIG if not initialized yet.
-  return id ? (s.agentMap[id] as LobeAgentConfig) : DEFAULT_AGENT_CONFIG;
+  // The server has already merged account defaults. Apply only this client's
+  // desktop runtime default, keeping the shared row intact.
+  return id ? getDesktopInboxConfig(id, s) : DEFAULT_AGENT_CONFIG;
 };
 const inboxAgentModel = (s: AgentStoreState) => inboxAgentConfig(s).model;
 
 const getAgentConfigById =
   (agentId: string) =>
   (s: AgentStoreState): LobeAgentConfig =>
-    s.agentMap[agentId] as LobeAgentConfig;
+    getDesktopInboxConfig(agentId, s);
 
 export const currentAgentConfig = (s: AgentStoreState): LobeAgentConfig =>
   getAgentConfigById(s.activeAgentId || '')(s);
