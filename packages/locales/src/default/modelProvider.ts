@@ -1,4 +1,37 @@
 export default {
+  'localImport.title': 'Import local configuration',
+  'localImport.description':
+    'Detect API configurations in Codex and Claude Code on this computer. Existing providers are kept unchanged.',
+  'localImport.destination':
+    'Import saves the selected API credential to your current account or workspace on {{server}}. Detection alone does not upload credentials.',
+  'localImport.scanning': 'Detecting configurations…',
+  'localImport.rescan': 'Detect again',
+  'localImport.import': 'Import',
+  'localImport.view': 'View configuration',
+  'localImport.chatgpt': 'Authorize ChatGPT subscription',
+  'localImport.models': 'Models: {{models}}',
+  'localImport.noModels': 'No explicit model found. Add models after import.',
+  'localImport.error':
+    'Could not finish. Detect again and retry. If a provider was saved, open its configuration to continue.',
+  'localImport.imported': 'Provider configuration saved. Open it to check the connection.',
+  'localImport.exists': 'This configuration already exists and has been kept unchanged.',
+  'localImport.partial':
+    'Provider saved. Some models could not be added. Open its configuration to add them.',
+  'localImport.status.ready': 'API credential detected. Ready to import.',
+  'localImport.status.not_found': 'No configuration or API credential found.',
+  'localImport.status.missing_key':
+    'Configuration found, but no readable API credential. Check the configuration file or environment variable.',
+  'localImport.status.sign_in':
+    'Subscription sign-in cannot be imported as an API key. Use a separate authorization flow or an API credential.',
+  'localImport.status.invalid_config':
+    'Could not read this configuration or its API address. Check the local configuration file.',
+  'localImport.status.helper_required':
+    'This configuration uses a credential helper or gateway sign-in. Add its API credential manually.',
+  'localImport.status.unsupported':
+    'This configuration uses extra request options or a cloud-specific protocol. Configure it manually.',
+  'localImport.status.local_endpoint':
+    'This API runs on this computer. A remote server cannot reach it through this address. Configure a reachable address first.',
+
   'azure.azureApiVersion.desc':
     'Azure API version, follow the format YYYY-MM-DD, check the [latest version](https://learn.microsoft.com/en-us/azure/ai-services/openai/reference#chat-completions)',
   'azure.azureApiVersion.fetch': 'Fetch List',

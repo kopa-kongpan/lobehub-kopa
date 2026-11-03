@@ -24,6 +24,19 @@ export const getProviderAuthPayload = (
     VertexAIKeyVault,
 ) => {
   switch (provider) {
+    case ModelProvider.Anthropic: {
+      const apiKey = clientApiKeyManager.pick(keyVaults.apiKey);
+      return {
+        apiKey,
+        authType: keyVaults.authType,
+        baseURL: keyVaults.baseURL,
+        ...(keyVaults.authType === 'bearer' && apiKey
+          ? {
+              defaultHeaders: { 'Authorization': `Bearer ${apiKey}`, 'x-api-key': null },
+            }
+          : {}),
+      };
+    }
     case ModelProvider.Bedrock: {
       const { accessKeyId, apiKey, region, secretAccessKey, sessionToken } = keyVaults;
 

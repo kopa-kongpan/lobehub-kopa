@@ -103,6 +103,14 @@ export const buildPayloadFromKeyVaults = (
   // Use runtimeProvider to determine which fields to include
   // This handles both builtin providers and custom providers with sdkType
   switch (runtimeProvider) {
+    case ModelProvider.Anthropic: {
+      return {
+        apiKey: keyVaults.apiKey,
+        authType: keyVaults.authType,
+        baseURL: keyVaults.baseURL,
+        runtimeProvider,
+      };
+    }
     case ModelProvider.Bedrock: {
       const { accessKeyId, apiKey, region, secretAccessKey, sessionToken } = keyVaults;
 
@@ -220,6 +228,20 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
   const runtimeProvider = payload.runtimeProvider ?? provider;
 
   switch (runtimeProvider) {
+    case ModelProvider.Anthropic: {
+      const apiKey = apiKeyManager.pick(payload.apiKey || llmConfig.ANTHROPIC_API_KEY);
+      const baseURL =
+        payload.baseURL || (useServerConfig ? process.env.ANTHROPIC_PROXY_URL : undefined);
+      return {
+        apiKey,
+        baseURL,
+        ...(payload.authType === 'bearer' && apiKey
+          ? {
+              defaultHeaders: { 'Authorization': `Bearer ${apiKey}`, 'x-api-key': null },
+            }
+          : {}),
+      };
+    }
     case ModelProvider.LobeHub: {
       return { apikey: payload.apiKey, baseURL: payload.baseURL, ...payload };
     }

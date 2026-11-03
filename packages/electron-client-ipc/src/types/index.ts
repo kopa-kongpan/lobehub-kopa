@@ -12,6 +12,7 @@ export * from './heterogeneousAgent';
 export * from './imessageBridge';
 export * from './localDatabase';
 export * from './localFilePreviewFailure';
+export * from './localProvider';
 export * from './localSystem';
 export * from './mcpInstall';
 export * from './notification';

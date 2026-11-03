@@ -56,6 +56,15 @@ const setModelProviderConfig = (provider: string, config: any) => {
 };
 
 describe('getProviderAuthPayload', () => {
+  it('preserves Claude bearer authentication for the client runtime', () => {
+    expect(
+      getProviderAuthPayload(ModelProvider.Anthropic, { apiKey: 'test-token', authType: 'bearer' }),
+    ).toMatchObject({
+      apiKey: 'test-token',
+      authType: 'bearer',
+      defaultHeaders: { 'Authorization': 'Bearer test-token', 'x-api-key': null },
+    });
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();

@@ -17,6 +17,7 @@ import HeteroSessionCtr from './HeteroSessionCtr';
 import ImessageBridgeCtr from './ImessageBridgeCtr';
 import LocalDatabaseCtr from './LocalDatabaseCtr';
 import LocalFileCtr from './LocalFileCtr';
+import LocalProviderCtr from './LocalProviderCtr';
 import McpCtr from './McpCtr';
 import McpInstallCtr from './McpInstallCtr';
 import MenuController from './MenuCtr';
@@ -52,6 +53,7 @@ export const controllerIpcConstructors = [
   GitCtr,
   LocalDatabaseCtr,
   LocalFileCtr,
+  LocalProviderCtr,
   ImessageBridgeCtr,
   McpCtr,
   McpInstallCtr,

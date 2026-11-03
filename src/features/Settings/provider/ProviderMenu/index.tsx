@@ -1,5 +1,6 @@
 'use client';
 
+import { isDesktop } from '@lobechat/const';
 import { cssVar, Flexbox, Icon, SearchBar } from '@lobehub/ui';
 import { SearchIcon } from 'lucide-react';
 import { type ReactNode } from 'react';
@@ -11,6 +12,7 @@ import SkeletonList from '@/features/NavPanel/components/SkeletonList';
 import { useAiInfraStore } from '@/store/aiInfra/store';
 
 import { PROVIDER_MENU_WIDTH } from '../const';
+import { ImportLocalProvider } from '../features/ImportLocalProvider';
 import AddNew from './AddNew';
 import ProviderList from './List';
 import SearchResult from './SearchResult';
@@ -78,6 +80,11 @@ const Layout = memo(({ children, mobile }: ProviderMenuProps) => {
         />
         <AddNew />
       </Flexbox>
+      {isDesktop && (
+        <Flexbox padding={8}>
+          <ImportLocalProvider />
+        </Flexbox>
+      )}
       {children}
     </Flexbox>
   );
