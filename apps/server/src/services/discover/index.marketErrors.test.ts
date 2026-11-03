@@ -125,6 +125,24 @@ describe('DiscoverService Market detail failures', () => {
     });
   });
 
+  it('loads a public agent when an expired Market login is rejected', async () => {
+    market.agents.getAgentDetail
+      .mockRejectedValueOnce(new MarketAPIError(401, 'invalid_token'))
+      .mockResolvedValueOnce({
+        config: { systemRole: 'Public assistant instructions' },
+        identifier: 'public-agent',
+        name: 'Public agent',
+      });
+
+    await expect(service.getAssistantDetail({ identifier: 'public-agent' })).resolves.toMatchObject(
+      {
+        config: { systemRole: 'Public assistant instructions' },
+        identifier: 'public-agent',
+        title: 'Public agent',
+      },
+    );
+  });
+
   it('still returns a user profile after a successful SDK response', async () => {
     market.user.getUserInfo.mockResolvedValue({ user: { id: 1, userName: 'test-user' } });
 

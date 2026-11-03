@@ -21,6 +21,7 @@ import {
   legacyGetAssistantList,
 } from './assistantsLegacy';
 import type { DiscoverService } from './index';
+import { readAgentDetailWithPublicFallback } from './publicAgentDetail';
 import { isMarketNotFound, log, normalizeAuthorField } from './utils';
 
 // ============================== Assistant Market ==============================
@@ -71,7 +72,7 @@ export const getAssistantDetail = async (
   const normalizedLocale = normalizeLocale(locale);
 
   try {
-    const data = await service.market.agents.getAgentDetail(identifier, {
+    const data = await readAgentDetailWithPublicFallback(service.market, identifier, {
       locale: normalizedLocale,
       version,
     });

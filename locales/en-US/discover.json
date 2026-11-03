@@ -1,4 +1,9 @@
 {
+  "addAgent.action": "Add and chat",
+  "addAgent.alreadyAdded": "Already added. Opening your assistant…",
+  "addAgent.failed": "Could not add this public assistant. Try again.",
+  "addAgent.resourcesNotCopied": "Files and knowledge bases were not copied. Add your own in assistant settings.",
+  "addAgent.success": "Assistant added",
   "assistant.favorite": "Save",
   "assistant.favoriteFailed": "Failed to save",
   "assistant.favoriteSuccess": "Saved",

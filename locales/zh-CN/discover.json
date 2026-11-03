@@ -1,4 +1,9 @@
 {
+  "addAgent.action": "添加并对话",
+  "addAgent.alreadyAdded": "已添加，正在打开助手…",
+  "addAgent.failed": "添加公开助手失败，请重试。",
+  "addAgent.resourcesNotCopied": "未复制文件和知识库，请在助手设置中添加自己的内容。",
+  "addAgent.success": "已添加助手",
   "assistant.favorite": "收藏",
   "assistant.favoriteFailed": "收藏失败",
   "assistant.favoriteSuccess": "已收藏",

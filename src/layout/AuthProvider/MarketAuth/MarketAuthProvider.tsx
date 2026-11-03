@@ -12,7 +12,6 @@ import { MARKET_OIDC_ENDPOINTS } from '@/services/_url';
 import { useServerConfigStore } from '@/store/serverConfig';
 import { serverConfigSelectors } from '@/store/serverConfig/selectors';
 import { useUserStore } from '@/store/user';
-import { settingsSelectors } from '@/store/user/slices/settings/selectors/settings';
 
 import ClaimResourcesModal from './ClaimResourcesModal';
 import { MarketAuthError } from './errors';
@@ -21,6 +20,11 @@ import MarketAuthConfirmModal from './MarketAuthConfirmModal';
 import { MarketOIDC } from './oidc';
 import type { MarketAuthScene } from './scenes';
 import { createSingleFlight } from './singleFlight';
+import {
+  clearMarketTokensFromDB,
+  getMarketTokensFromDB,
+  saveMarketTokensToDB,
+} from './tokenStorage';
 import {
   type MarketAuthContextType,
   type MarketAuthSession,
@@ -54,54 +58,6 @@ const fetchUserInfo = async (accessToken?: string): Promise<MarketUserInfo | nul
   } catch (error) {
     console.error('[MarketAuth] Error fetching user info:', error);
     return null;
-  }
-};
-
-/**
- * Get market tokens from DB
- */
-const getMarketTokensFromDB = () => {
-  const settings = settingsSelectors.currentSettings(useUserStore.getState());
-  return settings.market;
-};
-
-/**
- * Store market tokens to DB
- */
-const saveMarketTokensToDB = async (
-  accessToken: string,
-  refreshToken?: string,
-  expiresAt?: number,
-) => {
-  try {
-    await useUserStore.getState().setSettings({
-      market: {
-        accessToken,
-        expiresAt,
-        refreshToken,
-      },
-    });
-  } catch (error) {
-    console.error('[MarketAuth] Failed to save tokens to DB:', error);
-  }
-};
-
-/**
- * Clear market tokens from DB
- */
-const clearMarketTokensFromDB = async () => {
-  // If there are no tokens, no need to call setSettings
-  const currentTokens = getMarketTokensFromDB();
-  if (!currentTokens?.accessToken && !currentTokens?.refreshToken && !currentTokens?.expiresAt) {
-    return;
-  }
-
-  try {
-    await useUserStore.getState().setSettings({
-      market: undefined,
-    });
-  } catch (error) {
-    console.error('[MarketAuth] Failed to clear tokens from DB:', error);
   }
 };
 

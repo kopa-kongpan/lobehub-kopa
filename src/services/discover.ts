@@ -100,6 +100,18 @@ class DiscoverService {
     });
   };
 
+  /** Read only anonymously accessible templates before copying them into this site. */
+  getPublicAssistantDetail = async (params: {
+    identifier: string;
+    source?: AssistantMarketSource;
+    version?: string;
+  }): Promise<DiscoverAssistantDetail | undefined> => {
+    return lambdaClient.market.getPublicAssistantDetail.query({
+      ...params,
+      locale: globalHelpers.getCurrentLanguage(),
+    });
+  };
+
   getAssistantIdentifiers = async (
     params: { source?: AssistantMarketSource } = {},
   ): Promise<IdentifiersResponse> => {

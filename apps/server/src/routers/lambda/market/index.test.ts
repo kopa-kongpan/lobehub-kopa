@@ -2,6 +2,9 @@
 import { MarketAPIError } from '@lobehub/market-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { marketUserInfo, serverDatabase } from '@/libs/trpc/lambda/middleware';
+import { DiscoverService } from '@/server/services/discover';
+
 const mockDiscover = vi.hoisted(() => ({
   getAssistantDetail: vi.fn(),
   getGroupAgentDetail: vi.fn(),
@@ -95,5 +98,29 @@ describe('marketRouter detail procedures keep the upstream Market status', () =>
       code: 'INTERNAL_SERVER_ERROR',
       message: 'Failed to fetch group agent detail',
     });
+  });
+
+  it('imports public detail without applying the current Market credentials', async () => {
+    mockDiscover.getAssistantDetail.mockResolvedValue({ identifier: 'public-agent' });
+    const { marketRouter } = await import('./index');
+    const caller = marketRouter.createCaller({
+      marketAccessToken: 'fixture-token-must-not-be-forwarded',
+      userId: 'user-1',
+      workspaceId: 'fixture-workspace',
+    });
+
+    await expect(
+      caller.getPublicAssistantDetail({ identifier: 'public-agent', locale: 'zh-CN' }),
+    ).resolves.toEqual({ identifier: 'public-agent' });
+    expect(DiscoverService).toHaveBeenCalledWith();
+    expect(marketUserInfo).not.toHaveBeenCalled();
+    expect(serverDatabase).not.toHaveBeenCalled();
+  });
+
+  it('preserves denial from the anonymous Market endpoint', async () => {
+    mockDiscover.getAssistantDetail.mockRejectedValue(new MarketAPIError(403, 'Forbidden'));
+    await expect(
+      (await createCaller()).getPublicAssistantDetail({ identifier: 'private-agent' }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   });
 });
