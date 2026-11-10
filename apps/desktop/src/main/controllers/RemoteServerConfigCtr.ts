@@ -7,6 +7,7 @@ import type { DataSyncConfig, DesktopBootstrapIdentity } from '@lobechat/electro
 import { safeStorage, session as electronSession } from 'electron';
 
 import { OFFICIAL_CLOUD_SERVER } from '@/const/env';
+import { refreshAppSignIn, withdrawAppSignIn } from '@/modules/cliEmbedding/appSignInFile';
 import GatewayConnectionService from '@/services/gatewayConnectionSrv';
 import { appendVercelCookie } from '@/utils/http-headers';
 import { createLogger } from '@/utils/logger';
@@ -250,7 +251,7 @@ export default class RemoteServerConfigCtr extends ControllerModule {
         lastRefreshAt: this.lastRefreshAt,
         refreshToken: this.encryptedRefreshToken,
       });
-      this.syncGatewayAccessToken(accessToken);
+      this.pushRefreshedAccessToken(accessToken);
       return;
     }
 
@@ -273,11 +274,13 @@ export default class RemoteServerConfigCtr extends ControllerModule {
       refreshToken: this.encryptedRefreshToken,
     });
 
-    this.syncGatewayAccessToken(accessToken);
+    this.pushRefreshedAccessToken(accessToken);
   }
 
   /**
-   * Hand a freshly stored access token to the live device-gateway socket.
+   * Hand a freshly stored access token to everything that holds a copy of it:
+   * the live device-gateway socket, and the sign-in file `lh` reads inside
+   * local agent runs (which would otherwise keep the expired token).
    *
    * The gateway client caches the token it was constructed with and replays it
    * on every backoff / heartbeat reconnect, while the token itself is rotated
@@ -286,8 +289,9 @@ export default class RemoteServerConfigCtr extends ControllerModule {
    * — the socket dropped, the client replayed the stale token, and `auth_failed`
    * left the device offline.
    */
-  private syncGatewayAccessToken(accessToken: string) {
+  private pushRefreshedAccessToken(accessToken: string) {
     this.app.getService(GatewayConnectionService)?.updatePersonalToken(accessToken);
+    void refreshAppSignIn(accessToken);
   }
 
   /**
@@ -370,6 +374,8 @@ export default class RemoteServerConfigCtr extends ControllerModule {
     // Also clear from persistent storage
     logger.debug(`Deleting tokens from store key: ${this.encryptedTokensKey}`);
     this.app.storeManager.delete(this.encryptedTokensKey);
+    // Signed out: agent runs must not keep acting as the previous user.
+    await withdrawAppSignIn();
 
     // Disconnect gateway when tokens are cleared (logout / token refresh failure)
     const gatewaySrv = this.app.getService(GatewayConnectionService);

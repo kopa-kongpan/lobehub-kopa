@@ -60,6 +60,11 @@ export default {
   'docs.home.tabs.mine': 'Created by me',
   'docs.home.tabs.recent': 'Recently updated',
   'docs.home.tabs.shared': 'Shared with me',
+  'docs.library.agentSpaces.emptyDesc': "An Agent's documents appear here once you open that Agent",
+  'docs.library.agentSpaces.emptyTitle': 'No Agent knowledge bases yet',
+  'docs.library.agentSpaces.untitled': 'Untitled Agent',
+  'docs.library.tabs.agents': 'Agents',
+  'docs.library.tabs.mine': 'My knowledge bases',
   'docs.library.emptyDesc':
     'Gather related files and pages into a knowledge base to share them with your team and Agents',
   'docs.library.emptyTitle': 'No knowledge bases yet',
@@ -87,6 +92,7 @@ export default {
   'docs.section.drive': 'Drive',
   'docs.section.home': 'Home',
   'docs.section.library': 'Knowledge Bases',
+  'docs.section.sandboxStorage': 'Sandbox Storage',
   'docs.section.works': 'Works',
   'docs.sectionView.emptyFiltered': 'No pages match this filter',
   'docs.sectionView.filter': 'Show',
@@ -319,6 +325,16 @@ export default {
   'pageEditor.agentUnavailable.viewDocs': 'View docs',
   'pageEditor.artifactTag': 'Artifact',
   'pageEditor.autoSaveMessage': 'Your page is saved automatically. No need to save manually.',
+  'pageEditor.charLimit.blockedDescription':
+    'Changes are not saved. Shorten the page or upgrade your plan to keep editing.',
+  'pageEditor.charLimit.blockedTitle':
+    'This page has {{actual}} characters, over the {{limit}}-character limit per page on your plan.',
+  'pageEditor.charLimit.nearDescription':
+    'Saving will be refused once the page goes over the limit.',
+  'pageEditor.charLimit.nearTitle':
+    'This page has {{actual}} of {{limit}} characters allowed per page on your plan.',
+  'pageEditor.charLimit.overDescription':
+    'Changes cannot be saved while the page is over the limit. Shorten the page or upgrade your plan.',
   'pageEditor.chooseIcon': 'Choose Icon',
   'pageEditor.collab.notSynced':
     'Your latest page edits are still syncing, so the Agent may not see them yet.',
@@ -327,6 +343,14 @@ export default {
   'pageEditor.collab.offlineRestore.discard': 'Keep the current page',
   'pageEditor.collab.offlineRestore.restore': 'Restore my version',
   'pageEditor.collab.offlineRestore.title': 'Restore your offline edits?',
+  'pageEditor.collab.presence.agent': 'Agent',
+  'pageEditor.collab.presence.agentStatus': 'Editing this page',
+  'pageEditor.collab.presence.away': 'Away',
+  'pageEditor.collab.presence.inSection': 'In “{{section}}”',
+  'pageEditor.collab.presence.jumpHint': 'Click to jump',
+  'pageEditor.collab.presence.onPage': 'On this page',
+  'pageEditor.collab.presence.title': 'Also on this page',
+  'pageEditor.collab.presence.trigger': 'People on this page',
   'pageEditor.collab.retry': 'Retry',
   'pageEditor.collab.status.connecting': 'Connecting…',
   'pageEditor.collab.status.error': "Couldn't sync this page.",

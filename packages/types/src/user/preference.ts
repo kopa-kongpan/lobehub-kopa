@@ -167,6 +167,10 @@ export type UserGuide = z.infer<typeof UserGuideSchema>;
 
 export const UserLabSchema = z.object({
   /**
+   * enable agent identity: give an agent its own mail address
+   */
+  enableAgentIdentity: z.boolean().optional(),
+  /**
    * enable graph runtime configuration for agents
    */
   enableAgentGraphConfig: z.boolean().optional(),
@@ -199,7 +203,9 @@ export const UserLabSchema = z.object({
    */
   enableImessage: z.boolean().optional(),
   /**
-   * enable markdown rendering in chat input editor
+   * @deprecated The chat input always uses the rich editor; paste conversion moved to
+   * `settings.general.enablePasteAutoConvert`. Kept so a write from an older released
+   * client is not stripped by the schema, and to seed that setting for users who had it off.
    */
   enableInputMarkdown: z.boolean().optional(),
   /**
