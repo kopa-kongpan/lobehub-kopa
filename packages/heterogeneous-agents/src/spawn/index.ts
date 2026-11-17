@@ -51,6 +51,7 @@ export {
   type AgentStreamPipelineOptions,
   type UploadHeterogeneousImage,
 } from './agentStreamPipeline';
+export { ANTIGRAVITY_BASE_ARGS, buildAntigravityArgs } from './antigravity';
 export {
   classifyHeteroProcessFailure,
   type ClassifyHeteroProcessFailureParams,
@@ -200,6 +201,12 @@ export {
   sanitizeClaudeCodeDirectArgs,
   sanitizeClaudeCodeDirectEnv,
 } from './claudeCodeDirectEnv';
+export {
+  type ClaudeCodeControlRequest,
+  type ClaudeCodeControlRequestHandle,
+  type ClaudeCodeControlResponse,
+  ClaudeCodeLiveInput,
+} from './claudeCodeLiveInput';
 export { readClaudeCodeSessionCost } from './claudeCodeSessionCost';
 export {
   ensureClaudeCodeResumeTranscript,
@@ -208,7 +215,7 @@ export {
   findClaudeCodeTranscriptPath,
   resolveClaudeCodeTranscriptPath,
 } from './ensureResumeTranscript';
-export { getHeterogeneousAgentPresetEnv } from './presetEnv';
+export { getHeterogeneousAgentSpawnEnv } from './presetEnv';
 export {
   AMP_BASE_ARGS,
   buildQoderArgs,

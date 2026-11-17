@@ -7,7 +7,13 @@ import { botCallback } from './handlers/botCallback';
 import { botReplay } from './handlers/botReplay';
 import { botWakeFlush } from './handlers/botWakeFlush';
 import { channelAdvance, channelCallback } from './handlers/channel';
-import { documentAccess, documentProjection } from './handlers/documentCollab';
+import { deviceToolCompletion } from './handlers/deviceToolCompletion';
+import {
+  documentAccess,
+  documentProjection,
+  documentRoomStatus,
+  documentSeed,
+} from './handlers/documentCollab';
 import { execAgent } from './handlers/execAgent';
 import { finalizeAbandoned } from './handlers/finalizeAbandoned';
 import { gatewayCallback } from './handlers/gatewayCallback';
@@ -22,9 +28,11 @@ import { messengerWebhook } from './handlers/messengerWebhook';
 import { platformWebhook } from './handlers/platformWebhook';
 import { reapOperations } from './handlers/reapOperations';
 import { runStep, runStepHealth } from './handlers/runStep';
+import { shellExpire } from './handlers/shellExpire';
 import { subAgentCallback } from './handlers/subAgentCallback';
 import { toolResult } from './handlers/toolResult';
 import { bearerSecretAuth } from './middlewares/bearerSecretAuth';
+import { deviceGatewayServiceAuth } from './middlewares/deviceGatewayServiceAuth';
 import { qstashAuth } from './middlewares/qstashAuth';
 import { qstashOrApiKeyAuth } from './middlewares/qstashOrApiKeyAuth';
 import { serviceTokenAuth } from './middlewares/serviceTokenAuth';
@@ -56,6 +64,13 @@ app.post('/webhooks/inbox-report', qstashAuth(), agentInboxReport);
 // POST /api/agent/tool-result — gateway-side tool result LPUSH'd to Redis
 app.post('/tool-result', serviceTokenAuth(), toolResult);
 
+// POST /api/agent/device-tool-completion — device gateway relays the final
+// result of a device command that a parked operation is waiting on
+app.post('/device-tool-completion', deviceGatewayServiceAuth(), deviceToolCompletion);
+
+// POST /api/agent/shell-expire — deadline for a parked shell command (QStash)
+app.post('/shell-expire', qstashAuth(), shellExpire);
+
 // LLM relay: the user's device runs one LLM attempt for a device-only model
 // provider. Auth is the per-call lease token carried by `llm_execute`.
 // GET  /api/agent/llm-relay/:callId/payload — request body of the attempt
@@ -64,6 +79,8 @@ app.get('/llm-relay/:callId/payload', llmRelayPayload);
 app.post('/llm-relay/:callId/chunks', llmRelayChunks);
 app.get('/document-access', serviceTokenAuth(), documentAccess);
 app.post('/document-projection', serviceTokenAuth(), documentProjection);
+app.post('/document-seed', serviceTokenAuth(), documentSeed);
+app.get('/document-room-status', serviceTokenAuth(), documentRoomStatus);
 
 // POST /api/agent/finalize-abandoned — watchdog reverse-trigger finalize
 app.post('/finalize-abandoned', serviceTokenAuth(), finalizeAbandoned);

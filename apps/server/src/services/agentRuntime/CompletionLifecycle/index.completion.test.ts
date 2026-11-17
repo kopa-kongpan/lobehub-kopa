@@ -50,7 +50,7 @@ describe('CompletionLifecycle.dispatchHooks — verify plan race', () => {
       .spyOn(verifyServices, 'instantiateVerifyPlanOnStart')
       .mockReturnValue(instantiation);
     const runVerifySpy = vi
-      .spyOn(verifyServices, 'runVerifyOnCompletion')
+      .spyOn(verifyServices, 'scheduleVerifyOnCompletion')
       .mockResolvedValue(undefined);
 
     // A top-level task op registers the (still-pending) instantiation at start.
@@ -207,7 +207,7 @@ describe('CompletionLifecycle.dispatchHooks — completion notification', () => 
     vi.spyOn(lifecycle as any, 'createVerifyMessage').mockResolvedValue(undefined);
     vi.spyOn(hookDispatcher, 'dispatch').mockResolvedValue(undefined as any);
     vi.spyOn(hookDispatcher, 'unregister').mockImplementation(function () {});
-    vi.spyOn(verifyServices, 'runVerifyOnCompletion').mockResolvedValue(undefined);
+    vi.spyOn(verifyServices, 'scheduleVerifyOnCompletion').mockResolvedValue(undefined);
     // The recall gate falls back to the op row when metadata carries no trigger.
     (lifecycle as any).agentOperationModel = { findById: vi.fn(async () => null) };
   };
@@ -270,18 +270,21 @@ describe('CompletionLifecycle.dispatchHooks — completion notification', () => 
 
   // Scheduled = a user-deferred chat turn; Cron = the rate-limit auto-resume of
   // a user's chat turn. Both are "user walked away" runs the recall exists for.
-  it.each([RequestTrigger.Chat, RequestTrigger.Scheduled, RequestTrigger.Cron])(
-    'notifies for a user-recallable %s-triggered completion',
-    async (trigger) => {
-      const lifecycle = buildLifecycle();
-      stubSideEffects(lifecycle);
+  it.each([
+    RequestTrigger.Chat,
+    RequestTrigger.Scheduled,
+    RequestTrigger.Cron,
+    RequestTrigger.McpEvent,
+    RequestTrigger.Webhook,
+  ])('notifies for a user-recallable %s-triggered completion', async (trigger) => {
+    const lifecycle = buildLifecycle();
+    stubSideEffects(lifecycle);
 
-      await lifecycle.dispatchHooks('op-1', buildDoneState({ trigger }), 'done');
-      await flushMicrotasks();
+    await lifecycle.dispatchHooks('op-1', buildDoneState({ trigger }), 'done');
+    await flushMicrotasks();
 
-      expect(mockNotifyAgentRunCompleted).toHaveBeenCalledTimes(1);
-    },
-  );
+    expect(mockNotifyAgentRunCompleted).toHaveBeenCalledTimes(1);
+  });
 
   it('falls back to the op row trigger when metadata carries none (synthetic hetero path)', async () => {
     const lifecycle = buildLifecycle();

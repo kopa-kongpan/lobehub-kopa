@@ -16,7 +16,12 @@ import {
   spawnTraeAcpAgent,
 } from './acpSpawnAgent';
 import { AgentStreamPipeline, type UploadHeterogeneousImage } from './agentStreamPipeline';
-import { ClaudeCodeLiveInput } from './claudeCodeLiveInput';
+import { buildAntigravityArgs } from './antigravity';
+import {
+  type ClaudeCodeControlRequest,
+  type ClaudeCodeControlRequestHandle,
+  ClaudeCodeLiveInput,
+} from './claudeCodeLiveInput';
 import { readClaudeCodeSessionCost } from './claudeCodeSessionCost';
 import { resolveCliSpawnPlan } from './cliSpawn';
 import { readCodexSessionModel, resolveCodexInitialModel } from './codexModel';
@@ -28,7 +33,7 @@ import {
 import type { AgentPromptInput, BuildAgentInputOptions } from './input';
 import { buildAgentInput } from './input';
 import { prepareClaudeCodeLobeHubCli } from './lobeHubCliPlugin';
-import { getHeterogeneousAgentPresetEnv } from './presetEnv';
+import { getHeterogeneousAgentSpawnEnv } from './presetEnv';
 import { assertSpawnableWorkingDirectory } from './workingDirectory';
 
 export interface SpawnAgentOptions {
@@ -92,8 +97,6 @@ export interface SpawnAgentOptions {
    * events still carry the conventional shape.
    */
   operationId: string;
-  /** (Devin ACP only) Global `--permission-mode` value, placed before `acp`. */
-  permissionMode?: string;
   /**
    * User prompt. A plain string is sugar for a single text block; the array
    * form supports mixed text + image content blocks (URL / path / base64).
@@ -150,6 +153,13 @@ export interface SpawnAgentHandle {
   kill: (signal?: NodeJS.Signals) => void;
   /** Spawned child PID, undefined if spawn failed pre-PID. */
   pid: number | undefined;
+  /**
+   * (Claude Code `liveInput` only) Write a stream-json `control_request` into
+   * the running session; `undefined` once input has closed.
+   */
+  sendControlRequest?: (
+    request: ClaudeCodeControlRequest,
+  ) => ClaudeCodeControlRequestHandle | undefined;
   /**
    * (Claude Code `liveInput` only) Deliver a user message into the running
    * session; Claude Code reads it at its next tool boundary, or starts a turn
@@ -390,6 +400,9 @@ export const buildQoderArgs = ({
 
 const buildSpawnArgs = (params: BuildSpawnArgsParams): string[] => {
   switch (params.agentType) {
+    case 'antigravity': {
+      return buildAntigravityArgs(params);
+    }
     case 'amp': {
       return buildAmpArgs(params);
     }
@@ -506,11 +519,11 @@ export const spawnAgent = async (options: SpawnAgentOptions): Promise<SpawnAgent
     options.inputOptions,
   );
   const inputPlan = { ...promptPlan, args: [...lobeHubCli.args, ...promptPlan.args] };
-  const childEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    ...getHeterogeneousAgentPresetEnv(options.agentType),
-    ...options.env,
-  };
+  const childEnv: NodeJS.ProcessEnv = getHeterogeneousAgentSpawnEnv(
+    options.agentType,
+    options.env,
+    process.env,
+  );
   // Codex builds each shell command's env from `[shell_environment_policy]`,
   // not from its own process env, so a user's `inherit = "core"` strips the
   // run context `lh` needs. Forward it as `shell_environment_policy.set.*`
@@ -764,6 +777,7 @@ const spawnCliAgent = async (
     exit,
     ...(live && {
       interruptTurn: () => live.interrupt(),
+      sendControlRequest: (request: ClaudeCodeControlRequest) => live.sendControlRequest(request),
       sendUserMessage: async (prompt: AgentPromptInput, sendOptions?: { uuid?: string }) => {
         if (!live.isOpen) return false;
         const plan = await buildAgentInput('claude-code', prompt, options.inputOptions);

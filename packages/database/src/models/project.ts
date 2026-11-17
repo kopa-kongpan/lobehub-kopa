@@ -24,6 +24,7 @@ import type { LobeChatDatabase } from '../type';
 import { isUserKnowledgeBase } from '../utils/knowledgeBaseType';
 import { joinTopicAgentsToProjects } from '../utils/projectTopicAgents';
 import { topicRunStartedAtColumn } from '../utils/topicRunStartedAt';
+import { notChannelTopic } from '../utils/topicVisibility';
 import {
   buildWorkspacePayload,
   buildWorkspaceWhere,
@@ -44,7 +45,11 @@ export interface CreateProjectInput {
   avatar?: string;
   /** Lead the project with an existing agent instead of creating one named after it. */
   coordinatorAgentId?: string;
+  /** Id for the agent created to lead the project; ignored with `coordinatorAgentId`. */
+  dedicatedAgentId?: string;
   description?: string;
+  /** Id reserved by the caller; generated when omitted. */
+  id?: string;
   /** Task prefix for this project; omit to keep the scope's default prefix. */
   identifier?: string | null;
   name: string;
@@ -59,7 +64,10 @@ export interface CreateProjectInput {
  * aggregate, so `ProjectRepository.create` resolves or creates it first and only
  * its id reaches this model.
  */
-export interface InsertProjectInput extends Omit<CreateProjectInput, 'repository'> {
+export interface InsertProjectInput extends Omit<
+  CreateProjectInput,
+  'dedicatedAgentId' | 'repository'
+> {
   coordinatorAgentId: string;
 }
 
@@ -1082,6 +1090,25 @@ export class ProjectModel {
     return { projectId, environmentId };
   }
 
+  /**
+   * Unlink an environment from a project. The environment itself stays — it is
+   * shared by every project that lists it — and so do the project's folders
+   * and conversations made from it; unlinking twice is a no-op.
+   */
+  async detachEnvironment(projectId: string, environmentId: string) {
+    if (!(await this.findManageableById(projectId)))
+      throw new Error('Project not found or access denied');
+    await this.db
+      .delete(projectEnvironments)
+      .where(
+        and(
+          eq(projectEnvironments.projectId, projectId),
+          eq(projectEnvironments.environmentId, environmentId),
+        ),
+      );
+    return { projectId, environmentId };
+  }
+
   /** Enabled environments linked to this project. */
   async listEnvironments(projectId: string) {
     if (!(await this.findById(projectId))) throw new Error('Project not found or access denied');
@@ -1090,6 +1117,7 @@ export class ProjectModel {
         id: environments.id,
         name: environments.name,
         configuration: environments.configuration,
+        visibility: environments.visibility,
       })
       .from(environments)
       .innerJoin(
@@ -1150,6 +1178,10 @@ export class ProjectModel {
           eq(topics.projectId, projectId),
           buildWorkspaceWhere(scope, topics),
           isNull(topics.deletedAt),
+          // A Channel run topic holds the requester's Channel request and the
+          // history the Agent read there; it is surfaced through the Channel
+          // UI only, never as a project conversation — see `notChannelTopic`.
+          notChannelTopic(),
         ),
       )
       .orderBy(desc(topics.updatedAt));

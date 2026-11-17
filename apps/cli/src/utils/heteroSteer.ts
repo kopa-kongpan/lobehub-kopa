@@ -1,25 +1,74 @@
-import type { AgentPromptInput } from '@lobechat/heterogeneous-agents/spawn';
+import type {
+  AgentContentBlock,
+  AgentPromptInput,
+  ClaudeCodeControlRequest,
+  ClaudeCodeControlRequestHandle,
+} from '@lobechat/heterogeneous-agents/spawn';
 
+import {
+  dispatchHeteroControl,
+  type HeteroControlMessage,
+  type HeteroControlReport,
+} from './heteroControl';
 import { log } from './logger';
 
 /** The part of the lambda client the steer loop calls. */
 export interface HeteroSteerClient {
   aiAgent: {
+    /** Absent on a client that predates control messages. */
+    reportHeteroControlResult?: {
+      mutate: (
+        input: { controlId: string; operationId: string } & HeteroControlReport,
+      ) => Promise<unknown>;
+    };
     returnHeteroSteer: {
       mutate: (input: { messageId: string; operationId: string }) => Promise<unknown>;
     };
     waitHeteroSteer: {
       mutate: (
-        input: { blockMs?: number; operationId: string },
+        input: {
+          acceptsControl?: boolean;
+          acceptsImages?: boolean;
+          blockMs?: number;
+          operationId: string;
+        },
         options?: { signal?: AbortSignal },
       ) => Promise<{
-        message: { content: string; messageId: string } | null;
-        /** `false` for a run the user does not type into (a child run): stop polling. */
+        /**
+         * The next control message, or `null`. Present only when the server
+         * delivers control messages (the poll declared `acceptsControl`).
+         */
+        control?: HeteroControlMessage | null;
+        message: HeteroSteerMessage | null;
+        /**
+         * `false` for a run the user does not type into (a child run). It
+         * takes no follow-ups; without `control` on the answer, stop polling.
+         */
         steerable?: false;
       }>;
     };
   };
 }
+
+/** A follow-up to type into the session; `imageList` holds images pasted into its body. */
+export interface HeteroSteerMessage {
+  content: string;
+  imageList?: { id: string; url: string }[];
+  messageId: string;
+}
+
+/** The prompt a follow-up is typed in as: its text, then its images as image blocks. */
+export const buildSteerPrompt = (message: HeteroSteerMessage): AgentPromptInput => {
+  const images = message.imageList ?? [];
+  if (images.length === 0) return message.content;
+  return [
+    { text: message.content, type: 'text' },
+    ...images.map(({ id, url }): AgentContentBlock => ({
+      source: { id, type: 'url', url },
+      type: 'image',
+    })),
+  ];
+};
 
 export interface HeteroSteerContext {
   getTrpcClient: () => Promise<HeteroSteerClient>;
@@ -28,10 +77,16 @@ export interface HeteroSteerContext {
 
 interface SteerableHandle {
   events: AsyncIterable<any>;
+  sendControlRequest?: (
+    request: ClaudeCodeControlRequest,
+  ) => ClaudeCodeControlRequestHandle | undefined;
   sendUserMessage?: (prompt: AgentPromptInput, options?: { uuid?: string }) => Promise<boolean>;
 }
 
 const RETRY_MS = 2000;
+const REPORT_ATTEMPTS = 3;
+/** How long the end of a run waits for control handlers still running. */
+const CONTROL_SETTLE_MS = 10_000;
 
 /** The server predates steer delivery, or refuses it for this run: stop asking. */
 const isPermanentRefusal = (error: unknown) => {
@@ -60,6 +115,12 @@ const isMainStreamStart = (event: { data?: any; type: string }) =>
  * Once the server answered, the next main `stream_start` carries `liveSteer`
  * so the client knows the run's queue no longer waits for the run to end.
  *
+ * The same poll carries the server's control messages (`acceptsControl`):
+ * each goes to its handler in the `heteroControl` registry, which can write
+ * control requests into the session, and its outcome goes back with
+ * `aiAgent.reportHeteroControlResult`. A child run takes no follow-ups, but
+ * keeps polling for control messages when the server delivers them.
+ *
  * Without a server context or a live session, events pass through unchanged.
  */
 export async function* withHeteroSteer<E extends { data?: any; type: string }>(
@@ -73,26 +134,79 @@ export async function* withHeteroSteer<E extends { data?: any; type: string }>(
   }
 
   const { operationId } = context;
+  const sendControlRequest = handle.sendControlRequest;
   const delivered = new Set<string>();
   const abort = new AbortController();
-  // Set once the server answered a poll; the next main `stream_start` tells
-  // the client, so an older server never gets its queue hint changed.
+  const handling = new Set<Promise<void>>();
+  // Set once the server answered a poll; the next poll may hold.
+  let answered = false;
+  // Set once the server answered a poll for a run the user types into; the
+  // next main `stream_start` tells the client, so an older server never gets
+  // its queue hint changed.
   let supported = false;
   let markedLive = false;
 
+  const report = async (
+    client: HeteroSteerClient,
+    control: HeteroControlMessage,
+    outcome: HeteroControlReport,
+  ) => {
+    const reportResult = client.aiAgent.reportHeteroControlResult;
+    if (!reportResult) return;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await reportResult.mutate({ controlId: control.id, operationId, ...outcome });
+        return;
+      } catch (error) {
+        if (isPermanentRefusal(error) || attempt >= REPORT_ATTEMPTS) {
+          log.debug('Reporting control %s failed: %s', control.id, String(error));
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
+      }
+    }
+  };
+
+  // Handled alongside the poll, so a slow handler does not hold follow-ups.
+  const handleControl = (client: HeteroSteerClient, control: HeteroControlMessage) => {
+    const task = (async () => {
+      log.debug('Control %s: %s', control.id, control.command);
+      const outcome = await dispatchHeteroControl(control, {
+        operationId,
+        sendControlRequest: sendControlRequest!,
+        signal: abort.signal,
+      });
+      await report(client, control, outcome);
+    })()
+      .catch((error) => log.debug('Control %s failed: %s', control.id, String(error)))
+      .finally(() => handling.delete(task));
+    handling.add(task);
+  };
+
   const poll = async () => {
     const client = await context.getTrpcClient();
+    // Control messages need a way into the session and back to the server.
+    const acceptsControl = !!sendControlRequest && !!client.aiAgent.reportHeteroControlResult;
     while (!abort.signal.aborted) {
-      let message: { content: string; messageId: string } | null;
+      let message: HeteroSteerMessage | null;
       try {
         const res = await client.aiAgent.waitHeteroSteer.mutate(
-          // The first poll answers at once, so the run is marked steerable early.
-          supported ? { operationId } : { blockMs: 1, operationId },
+          {
+            ...(acceptsControl && { acceptsControl: true }),
+            // The session takes image blocks, so pasted images come along.
+            acceptsImages: true,
+            // The first poll answers at once, so the run is marked steerable early.
+            ...(!answered && { blockMs: 1 }),
+            operationId,
+          },
           { signal: abort.signal },
         );
-        if (res.steerable === false) return;
+        // An older server answers a child run at once without `control`: stop.
+        if (res.steerable === false && !(acceptsControl && res.control !== undefined)) return;
+        answered = true;
+        if (res.steerable !== false) supported = true;
+        if (res.control) handleControl(client, res.control);
         message = res.message;
-        supported = true;
       } catch (error) {
         if (abort.signal.aborted) return;
         if (isPermanentRefusal(error)) {
@@ -104,7 +218,15 @@ export async function* withHeteroSteer<E extends { data?: any; type: string }>(
       }
       if (!message) continue;
 
-      const accepted = await send(message.content, { uuid: message.messageId }).catch(() => false);
+      const steer = message;
+      const options = { uuid: steer.messageId };
+      const accepted = await send(buildSteerPrompt(steer), options).catch(async (error) => {
+        if (!steer.imageList?.length) return false;
+        // An image that cannot be fetched must not cost the message: its
+        // markdown still names the image.
+        log.debug('Steer images failed, sending the text: %s', String(error));
+        return send(steer.content, options).catch(() => false);
+      });
       if (accepted) {
         delivered.add(message.messageId);
         continue;
@@ -135,5 +257,18 @@ export async function* withHeteroSteer<E extends { data?: any; type: string }>(
   } finally {
     abort.abort();
     await polling;
+    // Let handlers still running report how they ended, within a bound: the
+    // run must end even if one hangs.
+    if (handling.size > 0) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([
+        Promise.all(handling),
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, CONTROL_SETTLE_MS);
+          timer.unref?.();
+        }),
+      ]);
+      clearTimeout(timer);
+    }
   }
 }

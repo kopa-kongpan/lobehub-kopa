@@ -10,7 +10,6 @@ import {
   BrainCircuit,
   ChartColumnBigIcon,
   ChartPieIcon,
-  Coins,
   ContainerIcon,
   CreditCard,
   Database,
@@ -32,6 +31,7 @@ import {
   TerminalSquare,
   Trash2,
   Wrench,
+  ZapIcon,
 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -86,6 +86,7 @@ export const useCategory = () => {
   const remoteServerUrl = useElectronStore(electronSyncSelectors.remoteServerUrl);
   const isDevMode = useUserStore((s) => userGeneralSettingsSelectors.config(s).isDevMode);
   const enableOAuthApps = useUserStore(labPreferSelectors.enableOAuthApps);
+  const enableWebhook = useServerConfigStore(serverConfigSelectors.enableWebhook);
 
   const avatarUrl = useMemo(() => {
     if (!avatar) return undefined;
@@ -140,8 +141,12 @@ export const useCategory = () => {
     if (enableBusinessFeatures) {
       const subscriptionItems: CategoryItem[] = [
         { icon: Map, key: SettingsTabs.Plans, label: tSubscription('tab.plans') },
-        { icon: ChartPieIcon, key: SettingsTabs.Usage, label: t('tab.usage') },
-        { icon: Coins, key: SettingsTabs.Credits, label: tSubscription('tab.credits') },
+        // One entry for usage and balance: `/settings/credits` redirects into it.
+        {
+          icon: ChartPieIcon,
+          key: SettingsTabs.Usage,
+          label: tSubscription('tab.usage'),
+        },
         { icon: CreditCard, key: SettingsTabs.Billing, label: tSubscription('tab.billing') },
         { icon: Gift, key: SettingsTabs.Referral, label: tSubscription('tab.referral') },
       ];
@@ -214,6 +219,13 @@ export const useCategory = () => {
         icon: Blocks,
         key: SettingsTabs.Connector,
         label: t('tab.connector'),
+      },
+      // What connectors fire on their own: the event subscriptions agents made
+      // through them. Next to the connectors they come from.
+      enableWebhook && {
+        icon: ZapIcon,
+        key: SettingsTabs.Automations,
+        label: t('tab.automations'),
       },
       {
         icon: KeyRound,
@@ -319,6 +331,7 @@ export const useCategory = () => {
     showProvider,
     isDevMode,
     enableOAuthApps,
+    enableWebhook,
     avatarUrl,
     username,
   ]);

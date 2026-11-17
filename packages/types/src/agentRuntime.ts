@@ -49,8 +49,11 @@ export enum RequestTrigger {
   Inbox = 'inbox',
   /** Chat input inline completion suggestions while the user is typing. */
   InputCompletion = 'input_completion',
+  McpEvent = 'mcp_event',
   Memory = 'memory',
   MultimodalAnalysis = 'multimodal_analysis',
+  /** Text-to-music generation from a music generation topic. */
+  Music = 'music',
   Notify = 'notify',
   Onboarding = 'onboarding',
   Openapi = 'openapi',
@@ -93,6 +96,8 @@ export enum RequestTrigger {
   /** Acceptance verification: plan generation, judging, review prediction and reports. */
   Verify = 'verify',
   Video = 'video',
+  /** An Agent run a generic inbound webhook call started. */
+  Webhook = 'webhook',
 }
 
 /**

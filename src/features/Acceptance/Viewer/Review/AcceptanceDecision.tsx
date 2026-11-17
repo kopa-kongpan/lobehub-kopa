@@ -7,11 +7,11 @@ import { useTranslation } from 'react-i18next';
 
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { useIsHydrated } from '@/hooks/useIsHydrated';
-import { mutate as globalMutate } from '@/libs/swr';
-import { isAcceptanceListKey } from '@/libs/swr/keys';
 import { verifyService } from '@/services/verify';
+import { useVerifyStore } from '@/store/verify';
 
 import { useAcceptanceScope } from '../AcceptanceScope';
+import { decisionSegments } from '../Checks/checkDecision';
 import { isException } from '../Checks/checkState';
 import { useAcceptanceComments } from '../Comments/hooks';
 import { flowPlanPhase } from '../Plan/planReview';
@@ -112,7 +112,7 @@ const AcceptanceDecision = ({ onDraftToComposer }: AcceptanceDecisionProps) => {
     try {
       await action();
       await mutate();
-      void globalMutate(isAcceptanceListKey);
+      void useVerifyStore.getState().refreshAcceptanceLists();
       return true;
     } catch (cause) {
       console.error('[acceptance:decision]', cause);
@@ -139,6 +139,7 @@ const AcceptanceDecision = ({ onDraftToComposer }: AcceptanceDecisionProps) => {
         repairing={acceptance.status === 'repairing'}
         rerunAvailable={embedded}
         rerunPending={false}
+        segments={decisionSegments(checks)}
         state={barState}
         statusText={statusText}
         subText={subTextWithApprovals || undefined}
@@ -236,7 +237,6 @@ const AcceptanceDecision = ({ onDraftToComposer }: AcceptanceDecisionProps) => {
           }
         }}
       />
-      <Flexbox style={{ height: 8 }} />
       <FeedbackDrawer
         entries={feedbackEntries}
         open={feedbackOpen}
