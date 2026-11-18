@@ -20,8 +20,11 @@ import {
 import CreateProjectMoreFields from './CreateProjectMoreFields';
 import MainAgentSection from './MainAgentSection';
 import ProjectAvatarField from './ProjectAvatarField';
+import { projectFolderName, type ProjectFolderSelection } from './projectFolder';
+import ProjectFolderField from './ProjectFolderField';
 
 export interface CreateProjectOptions {
+  fromFolder?: boolean;
   /**
    * Handle the created project instead of opening it. Callers that create a
    * project as a step of another action (filing a delivery under a new one)
@@ -46,13 +49,13 @@ interface CreateProjectFormState {
   slugEdited: boolean;
 }
 
-export const CreateProjectTitle = memo(() => {
+export const CreateProjectTitle = memo<{ fromFolder?: boolean }>(({ fromFolder }) => {
   const { t } = useTranslation('project');
 
-  return t('create.title');
+  return t(fromFolder ? 'create.fromFolder' : 'create.title');
 });
 
-const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
+const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated }) => {
   const { t } = useTranslation(['project', 'common']);
   const { close } = useModalContext();
   const navigate = useWorkspaceAwareNavigate();
@@ -70,6 +73,9 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
   });
   // Taken once per open modal: both generated avatars are seeded by these ids.
   const [reservedIds] = useState(reserveProjectIds);
+  const [folder, setFolder] = useState<ProjectFolderSelection>();
+  const [nameEdited, setNameEdited] = useState(false);
+  const [folderError, setFolderError] = useState(false);
   const createInput = getCreateProjectInput(form);
   const identifierInvalid =
     Boolean(form.identifier.trim()) && !isProjectIdentifierValid(form.identifier);
@@ -101,15 +107,24 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
   };
 
   const handleCreate = async () => {
-    if (!createInput || identifierTaken || slugTaken || form.loading || form.avatarUploading)
+    if (
+      (fromFolder && !folder) ||
+      !createInput ||
+      identifierTaken ||
+      slugTaken ||
+      form.loading ||
+      form.avatarUploading
+    )
       return;
     const submittedIdentifier = createInput.identifier ?? '';
     const submittedSlug = createInput.slug ?? '';
+    setFolderError(false);
     updateForm({ loading: true });
     try {
-      const project = await createProject(
-        buildCreateProjectRequest(createInput, { avatar: form.avatar, ids: reservedIds }),
-      );
+      const project = await createProject({
+        ...buildCreateProjectRequest(createInput, { avatar: form.avatar, ids: reservedIds }),
+        ...(folder && { folder }),
+      });
       // The project created an agent and maybe the Project label; show both.
       const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
       void Promise.all([refreshAgentList(), refreshAgentLabels()]);
@@ -122,6 +137,15 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
       // private project by another member that the loaded list cannot see, can
       // still collide after the inline check. The server names the field it
       // rejected, so the error lands on that input instead of a generic toast.
+      if (
+        fromFolder &&
+        ['PRECONDITION_FAILED', 'NOT_FOUND'].includes(
+          (error as { data?: { code?: string } }).data?.code ?? '',
+        )
+      ) {
+        setFolderError(true);
+        return;
+      }
       const conflict = getProjectConflictField(error);
       if (conflict === 'identifier') {
         setForm((current) => ({
@@ -149,6 +173,22 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
   return (
     <>
       <Flexbox gap={16} padding={16}>
+        {fromFolder && (
+          <ProjectFolderField
+            disabled={form.loading}
+            value={folder}
+            onChange={(next) => {
+              setFolderError(false);
+              if (next && !nameEdited) updateName(projectFolderName(next.path).slice(0, 255));
+              setFolder(next);
+            }}
+          />
+        )}
+        {folderError && (
+          <Text role="alert" type="danger">
+            {t('settings.directoryUnavailable')}
+          </Text>
+        )}
         <Flexbox gap={6}>
           <Text fontSize={13} weight={500}>
             {t('create.nameLabel')}
@@ -162,12 +202,15 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
             onUploadingChange={(avatarUploading) => updateForm({ avatarUploading })}
           >
             <Input
-              autoFocus
+              autoFocus={!fromFolder}
               maxLength={255}
               placeholder={t('create.namePlaceholder')}
               value={form.name}
-              onChange={(event) => updateName(event.target.value)}
               onPressEnter={handleCreate}
+              onChange={(event) => {
+                setNameEdited(!!event.target.value);
+                updateName(event.target.value);
+              }}
             />
           </ProjectAvatarField>
         </Flexbox>
@@ -187,16 +230,24 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ onCreated }) => {
           onSlugChange={(slug) => updateForm({ slug, slugConflict: false, slugEdited: true })}
           onSubmit={handleCreate}
         />
-        <Text fontSize={12} type="secondary">
-          {t('create.afterCreateHint')}
-        </Text>
+        {!fromFolder && (
+          <Text fontSize={12} type="secondary">
+            {t('create.afterCreateHint')}
+          </Text>
+        )}
       </Flexbox>
       <ModalFooter>
         <Button onClick={close}>{t('cancel', { ns: 'common' })}</Button>
         <Button
-          disabled={!createInput || identifierTaken || slugTaken || form.avatarUploading}
           loading={form.loading}
           type="primary"
+          disabled={
+            (fromFolder && !folder) ||
+            !createInput ||
+            identifierTaken ||
+            slugTaken ||
+            form.avatarUploading
+          }
           onClick={handleCreate}
         >
           {t('create.action')}

@@ -1,26 +1,18 @@
-import {
-  Alert,
-  Button,
-  createModal,
-  Flexbox,
-  Input,
-  Select,
-  Text,
-  useModalContext,
-} from '@lobehub/ui';
+import { Alert, Button, createModal, Flexbox, Select, Text, useModalContext } from '@lobehub/ui';
 import { t } from 'i18next';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AsyncError from '@/components/AsyncError';
 import { deviceService } from '@/services/device';
-import { deviceSelectors, useDeviceStore } from '@/store/device';
 import { useProjectDirectoryStore, useProjectEnvironments } from '@/store/projectWorkingDirectory';
+
+import { projectFolderName, type ProjectFolderSelection } from '../projectFolder';
+import ProjectFolderField from '../ProjectFolderField';
 
 interface AddDirectoryOptions {
   /** The machine to add it on, when the caller already knows it. */
   deviceId?: string;
-  /** Called with the folder once it is part of the project. */
   /** Called with the folder once it is part of the project, and the device it was saved on. */
   onAdded?: (directory: { deviceId: string; id: string }) => void;
 }
@@ -35,18 +27,17 @@ function AddDirectoryContent({
   environmentId?: string;
 }) {
   const { t } = useTranslation('project');
-  const deviceRequest = useDeviceStore((s) => s.useFetchDevices)(true);
-  const devices = useDeviceStore(deviceSelectors.deviceList);
   const environmentsRequest = useProjectDirectoryStore((s) => s.useFetchEnvironments)(projectId);
   const environments = useProjectEnvironments(projectId);
   const [environmentId, setEnvironment] = useState(initialEnvironmentId ?? '');
-  const [deviceId, setDevice] = useState(initialDeviceId ?? '');
-  const [path, setPath] = useState('');
+  const [folder, setFolder] = useState<ProjectFolderSelection>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>();
   const bind = useProjectDirectoryStore((s) => s.bind);
   const { close } = useModalContext();
   const save = async () => {
+    if (!folder || pending) return;
+    const { deviceId, path } = folder;
     setPending(true);
     setError(undefined);
     try {
@@ -54,10 +45,10 @@ function AddDirectoryContent({
       if (!stat?.exists || !stat.isDirectory) throw new Error(t('settings.directoryUnavailable'));
       const added = await bind({
         projectId,
-        environmentId,
+        environmentId: environmentId || undefined,
         deviceId,
         path,
-        name: path.split(/[\\/]/).findLast(Boolean) || path,
+        name: projectFolderName(path),
       });
       close();
       // The device picked here, not the one the caller suggested: the person may have changed it.
@@ -71,42 +62,34 @@ function AddDirectoryContent({
   };
   return (
     <Flexbox gap={16}>
-      <Text type="secondary">{t('settings.addDirectoryDescription')}</Text>
-      <Text>{t('directories.environment')}</Text>
-      <Select
-        aria-label={t('directories.environment')}
+      <ProjectFolderField
         disabled={pending}
-        options={environments.map((env) => ({ value: env.id, label: env.name }))}
-        placeholder={t('directories.environment')}
-        value={environmentId}
-        onChange={(id) => {
-          setEnvironment(id ?? '');
+        initialDeviceId={initialDeviceId}
+        value={folder}
+        onChange={(next) => {
+          setFolder(next);
           setError(undefined);
         }}
       />
-      <Text>{t('directories.device')}</Text>
-      <Select
-        aria-label={t('directories.device')}
-        disabled={pending}
-        options={devices.map((d) => ({ value: d.deviceId, label: d.friendlyName || d.deviceId }))}
-        placeholder={t('directories.device')}
-        value={deviceId}
-        onChange={(id) => {
-          setDevice(id ?? '');
-          setError(undefined);
-        }}
-      />
-      <Text>{t('directories.path')}</Text>
-      <Input
-        aria-label={t('directories.path')}
-        disabled={pending}
-        placeholder={t('directories.path')}
-        value={path}
-        onChange={(e) => {
-          setPath(e.target.value);
-          setError(undefined);
-        }}
-      />
+      {environments.length > 0 && (
+        <>
+          <Text>{t('directories.environment')}</Text>
+          <Select
+            aria-label={t('directories.environment')}
+            disabled={pending}
+            placeholder={t('directories.environment')}
+            value={environmentId}
+            options={[
+              { value: '', label: t('create.automaticEnvironment') },
+              ...environments.map((env) => ({ value: env.id, label: env.name })),
+            ]}
+            onChange={(id) => {
+              setEnvironment(id ?? '');
+              setError(undefined);
+            }}
+          />
+        </>
+      )}
       {error ? (
         <Alert
           showIcon
@@ -115,24 +98,17 @@ function AddDirectoryContent({
           type="error"
         />
       ) : null}
-      {deviceRequest.error || environmentsRequest.error ? (
+      {environmentsRequest.error ? (
         <AsyncError
-          error={deviceRequest.error || environmentsRequest.error}
-          onRetry={() =>
-            Promise.all([deviceRequest.revalidate(), environmentsRequest.revalidate()])
-          }
+          error={environmentsRequest.error}
+          onRetry={() => environmentsRequest.revalidate()}
         />
       ) : null}
       <Flexbox horizontal gap={8} justify="flex-end">
         <Button disabled={pending} onClick={close}>
           {t('cancel', { ns: 'common' })}
         </Button>
-        <Button
-          disabled={!environmentId || !deviceId || !path.trim()}
-          loading={pending}
-          type="primary"
-          onClick={save}
-        >
+        <Button disabled={!folder} loading={pending} type="primary" onClick={save}>
           {t('settings.addDirectory')}
         </Button>
       </Flexbox>

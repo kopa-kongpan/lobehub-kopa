@@ -9,6 +9,12 @@ import { createProjectMainAgent } from '../../models/projectMainAgent';
 import { projectAgents } from '../../schemas/project';
 import { projectEnvironments } from '../../schemas/projectEnvironment';
 import type { LobeChatDatabase } from '../../type';
+import { ProjectDirectoryRepository } from '../projectDirectory';
+
+export interface ProjectFolder {
+  deviceId: string;
+  path: string;
+}
 
 /**
  * Cross-aggregate write flow for projects. Creating a project also creates (or
@@ -24,7 +30,12 @@ export class ProjectRepository {
     private readonly workspaceId?: string,
   ) {}
 
-  async create({ dedicatedAgentId, repository, ...input }: CreateProjectInput) {
+  async create({
+    dedicatedAgentId,
+    repository,
+    folder,
+    ...input
+  }: CreateProjectInput & { folder?: ProjectFolder }) {
     const identifier = normalizeProjectIdentifier(input.identifier);
 
     return this.db.transaction(async (tx) => {
@@ -46,6 +57,7 @@ export class ProjectRepository {
             {
               avatar: input.avatar,
               id: dedicatedAgentId,
+              folder,
               name: input.name,
               visibility: input.visibility,
             },
@@ -92,6 +104,14 @@ export class ProjectRepository {
           environmentId: environment.id,
           projectId: project.id,
           workspaceId: this.workspaceId,
+        });
+      }
+
+      if (folder) {
+        await new ProjectDirectoryRepository(db, this.userId, this.workspaceId).bind({
+          ...folder,
+          name: input.name,
+          projectId: project.id,
         });
       }
 

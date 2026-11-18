@@ -14,11 +14,13 @@ import {
   type WorkspaceRole,
   wsCompatProcedure,
 } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { DeviceModel } from '@/database/models/device';
 import {
   ProjectIdentifierTakenError,
   ProjectModel,
   type ProjectModelOptions,
 } from '@/database/models/project';
+import { normalizeProjectDirectory } from '@/database/models/projectWorkingDirectory';
 import { ProjectRepository } from '@/database/repositories/project';
 import { ProjectCoordinatorRepository } from '@/database/repositories/projectCoordinator';
 import { ProjectOverviewRepository } from '@/database/repositories/projectOverview';
@@ -26,6 +28,7 @@ import type { LobeChatDatabase } from '@/database/type';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { createDefaultChannel } from '@/server/services/channel/defaultChannel';
+import { deviceGateway } from '@/server/services/deviceGateway';
 import { GoalService } from '@/server/services/goal';
 import { assertCanPerformResourceAction } from '@/server/services/resourcePermission';
 
@@ -134,6 +137,42 @@ function mapProjectError(error: unknown, operation: string): never {
   throw new TRPCError({ cause: error, code: 'BAD_REQUEST', message });
 }
 
+type ProjectCreateContext = {
+  projectModel: ProjectModel;
+  projectRepo: ProjectRepository;
+  serverDB: LobeChatDatabase;
+  userId: string;
+  workspaceId?: string | null;
+};
+
+async function saveNewProject(
+  ctx: ProjectCreateContext,
+  input: Parameters<ProjectRepository['create']>[0],
+) {
+  const project = await withMainAgent(
+    ctx.projectModel,
+    await ctx.projectRepo.create(input).catch(rethrowDuplicateProjectField),
+  );
+  await createDefaultChannel({
+    agentId: project.coordinatorAgentId,
+    db: ctx.serverDB,
+    projectId: project.id,
+    userId: ctx.userId,
+    workspaceId: ctx.workspaceId ?? undefined,
+  });
+  return { data: project, message: 'Project created', success: true };
+}
+
+const projectNameFields = {
+  avatar: z.string().optional(),
+  /** The create form uses the reserved IDs as avatar seeds before it saves. */
+  dedicatedAgentId: z.string().regex(PROJECT_AGENT_ID_REGEX).optional(),
+  id: z.string().regex(PROJECT_ID_REGEX).optional(),
+  identifier: projectIdentifierInput.optional(),
+  name: z.string().min(1).max(255),
+  slug: projectSlugInput.optional(),
+};
+
 export const projectRouter = router({
   acceptCompletion: projectWriteProcedure
     .input(idInput.extend({ comment: z.string().optional() }))
@@ -198,19 +237,9 @@ export const projectRouter = router({
   create: projectWriteProcedure
     .input(
       z.object({
-        avatar: z.string().optional(),
+        ...projectNameFields,
         coordinatorAgentId: z.string().optional(),
-        /**
-         * Id reserved for the dedicated main agent, so the avatar the form
-         * previewed is the one it keeps. Ignored when `coordinatorAgentId`
-         * picks an existing agent.
-         */
-        dedicatedAgentId: z.string().regex(PROJECT_AGENT_ID_REGEX).optional(),
         description: z.string().optional(),
-        /** Id reserved by the create form; its generated avatar is seeded by it. */
-        id: z.string().regex(PROJECT_ID_REGEX).optional(),
-        identifier: projectIdentifierInput.optional(),
-        name: z.string().min(1).max(255),
         repository: z
           .object({
             defaultBranch: z.string().max(255).optional(),
@@ -218,32 +247,62 @@ export const projectRouter = router({
             url: z.string().min(1).max(2048),
           })
           .optional(),
-        slug: projectSlugInput.optional(),
         visibility: z.enum(PROJECT_VISIBILITIES).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        if (input.coordinatorAgentId) {
+        if (input.coordinatorAgentId)
           await assertResourceUsable(ctx, 'agent', input.coordinatorAgentId);
-        }
-        // The repository owns the cross-aggregate transaction (main agent,
-        // coordinator link and the optional repository environment). A taken
-        // slug or identifier still surfaces as the field-level CONFLICT code.
-        const project = await withMainAgent(
-          ctx.projectModel,
-          await ctx.projectRepo.create(input).catch(rethrowDuplicateProjectField),
-        );
-        await createDefaultChannel({
-          agentId: project.coordinatorAgentId,
-          db: ctx.serverDB,
-          projectId: project.id,
-          userId: ctx.userId,
-          workspaceId: ctx.workspaceId ?? undefined,
-        });
-        return { data: project, message: 'Project created', success: true };
+        return await saveNewProject(ctx, input);
       } catch (error) {
         mapProjectError(error, 'create');
+      }
+    }),
+
+  createFromDirectory: projectWriteProcedure
+    .input(
+      z.object({
+        ...projectNameFields,
+        folder: z.object({
+          deviceId: z.string().min(1).max(64),
+          path: z.string().min(1).max(4096),
+        }),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { deviceId, path } = input.folder;
+      const workspaceId = ctx.workspaceId ?? undefined;
+      const devices = new DeviceModel(ctx.serverDB, ctx.userId, workspaceId);
+      const device = workspaceId
+        ? await devices.findWorkspaceDeviceById(deviceId)
+        : await devices.findPersonalByDeviceId(deviceId);
+      if (!device) throw new TRPCError({ code: 'NOT_FOUND', message: 'Device unavailable' });
+      let directory: string;
+      try {
+        directory = normalizeProjectDirectory(path, device.platform);
+      } catch {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'An absolute directory path is required',
+        });
+      }
+      const stat = await deviceGateway.statPath({
+        deviceId,
+        path: directory,
+        userId: ctx.userId,
+        workspaceId,
+      });
+      if (!stat?.exists || !stat.isDirectory)
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Directory unavailable' });
+      try {
+        return await saveNewProject(ctx, {
+          ...input,
+          folder: { deviceId, path: directory },
+          visibility: 'private',
+        });
+      } catch (error) {
+        mapProjectError(error, 'createFromDirectory');
       }
     }),
 

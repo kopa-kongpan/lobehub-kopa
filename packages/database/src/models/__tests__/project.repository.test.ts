@@ -2,11 +2,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
 import { ProjectRepository } from '../../repositories/project';
-import { environments, projectEnvironments, users, workspaces } from '../../schemas';
+import {
+  agents,
+  devices,
+  environmentInstances,
+  environments,
+  projectEnvironments,
+  users,
+  workspaces,
+} from '../../schemas';
 import type { LobeChatDatabase } from '../../type';
 import { EnvironmentModel } from '../environment';
 import type { CreateProjectInput } from '../project';
 import { ProjectModel } from '../project';
+import { ProjectWorkingDirectoryModel } from '../projectWorkingDirectory';
 
 const serverDB: LobeChatDatabase = await getTestDB();
 const userId = 'project-repository-user';
@@ -22,7 +31,7 @@ const createProject = (repo: ProjectRepository, input: Omit<CreateProjectInput, 
     identifier: `R${String(++projectIdentifierSequence).padStart(5, '0')}`,
   });
 
-describe('a project created from a GitHub repository', () => {
+describe('project creation and its resources', () => {
   const repo = new ProjectRepository(serverDB, userId);
   const model = new ProjectModel(serverDB, userId);
 
@@ -33,9 +42,41 @@ describe('a project created from a GitHub repository', () => {
 
   afterEach(async () => {
     await serverDB.delete(projectEnvironments);
+    await serverDB.delete(environmentInstances);
     await serverDB.delete(environments);
     await serverDB.delete(workspaces);
     await serverDB.delete(users);
+  });
+
+  it('creates a runnable folder on the selected device and pins the project agent to it', async () => {
+    const folder = { deviceId: 'office-mac', path: '/Users/test/Project' };
+    await serverDB.insert(devices).values({
+      deviceId: folder.deviceId,
+      identitySource: 'fallback',
+      platform: 'darwin',
+      userId,
+    });
+
+    const project = await repo.create({ folder, name: 'Office' });
+    expect(await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id)).toEqual([
+      expect.objectContaining({ ...folder, runnable: true }),
+    ]);
+    const agent = await serverDB.query.agents.findFirst({
+      where: (row, { eq }) => eq(row.id, project.coordinatorAgentId!),
+    });
+    expect(agent?.agencyConfig).toMatchObject({
+      boundDeviceId: folder.deviceId,
+      executionTarget: 'device',
+      workingDirByDevice: { [folder.deviceId]: { path: folder.path } },
+    });
+  });
+
+  it('rolls back both the new project and its dedicated agent if binding fails', async () => {
+    await expect(
+      repo.create({ name: 'Unbound', folder: { deviceId: 'unknown', path: '/work' } }),
+    ).rejects.toThrow('Device not found');
+    expect(await model.list()).toEqual([]);
+    expect(await serverDB.select().from(agents)).toEqual([]);
   });
 
   it('creates a project from a GitHub repository with its environment attached', async () => {

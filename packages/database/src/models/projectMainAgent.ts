@@ -67,6 +67,7 @@ export const createProjectMainAgent = async (
   scope: Scope,
   input: {
     avatar?: string;
+    folder?: { deviceId: string; path: string };
     /** Reserved by the create form so its generated avatar matches the preview. */
     id?: string;
     name: string;
@@ -76,11 +77,13 @@ export const createProjectMainAgent = async (
   const agent = await new AgentModel(db, scope.userId, scope.workspaceId).create({
     ...createProjectCoordinatorAgentConfig({ avatar: input.avatar, name: input.name }),
     ...(input.id && { id: input.id }),
-    // A project's work outlives a conversation and needs no machine of the
-    // member's to be online: the cloud sandbox keeps the project's checkout on
-    // its drive. Left unset, a web client would resolve the agent to no
-    // execution target at all, and the project would start with nowhere to run.
-    agencyConfig: { executionTarget: 'sandbox' },
+    agencyConfig: input.folder
+      ? {
+          boundDeviceId: input.folder.deviceId,
+          executionTarget: 'device',
+          workingDirByDevice: { [input.folder.deviceId]: { path: input.folder.path } },
+        }
+      : { executionTarget: 'sandbox' },
     visibility: input.visibility,
   });
 

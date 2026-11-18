@@ -319,6 +319,12 @@ const ProjectListPage = memo(() => {
   const createMenuItems = useMemo<DropdownItem[]>(
     () => [
       {
+        icon: FolderClosedIcon,
+        key: 'folder',
+        label: t('create.fromFolder'),
+        onClick: () => openCreateProjectModal({ fromFolder: true }),
+      },
+      {
         icon: PlusIcon,
         key: 'blank',
         label: t('create.blank'),
@@ -379,9 +385,11 @@ const ProjectListPage = memo(() => {
                 {t(`sidebar.sort.${sortBy}`)}
               </Button>
             </DropdownMenu>
-            <DropdownMenu items={createMenuItems} placement={'bottomRight'}>
-              <Button icon={PlusIcon}>{t('create.action')}</Button>
-            </DropdownMenu>
+            {canManage && (
+              <DropdownMenu items={createMenuItems} placement={'bottomRight'}>
+                <Button icon={PlusIcon}>{t('create.action')}</Button>
+              </DropdownMenu>
+            )}
           </Flexbox>
         </Flexbox>
         {listState === 'error' ? (
@@ -397,6 +405,17 @@ const ProjectListPage = memo(() => {
             <Empty
               description={keyword.trim() ? t('list.searchEmpty') : t('list.emptyDescription')}
               icon={keyword.trim() ? SearchXIcon : FolderClosedIcon}
+              action={
+                canManage &&
+                !keyword.trim() && (
+                  <Button
+                    icon={FolderClosedIcon}
+                    onClick={() => openCreateProjectModal({ fromFolder: true })}
+                  >
+                    {t('create.fromFolder')}
+                  </Button>
+                )
+              }
             />
           </Center>
         ) : viewMode === 'folder' ? (

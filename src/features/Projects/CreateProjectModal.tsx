@@ -19,7 +19,7 @@ export const openCreateProjectModal = (options: CreateProjectOptions = {}) =>
     styles: { content: { padding: 0 } },
     title: (
       <Suspense fallback={null}>
-        <CreateProjectTitle />
+        <CreateProjectTitle fromFolder={options.fromFolder} />
       </Suspense>
     ),
     width: 460,

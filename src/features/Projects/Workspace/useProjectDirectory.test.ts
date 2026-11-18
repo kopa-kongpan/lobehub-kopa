@@ -12,6 +12,7 @@ const directory = (id: string, deviceId: string, extra: Partial<ProjectDirectory
     name: id,
     path: `/work/${id}`,
     permission: 'readWrite',
+    runnable: true,
     ...extra,
   }) as ProjectDirectory;
 
@@ -20,6 +21,7 @@ describe('directoriesOnDevice', () => {
     directory('mail', 'studio'),
     directory('tts', 'studio'),
     directory('other', 'laptop'),
+    directory('disabled-environment', 'studio', { runnable: false }),
     directory('unlinked', 'studio', { instanceId: null }),
     directory('readonly', 'studio', { permission: 'read' } as Partial<ProjectDirectory>),
   ];

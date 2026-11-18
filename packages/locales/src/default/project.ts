@@ -179,6 +179,12 @@ export default {
   'create.avatarInvalidType': 'Use a JPG, PNG, GIF, or WEBP image.',
   'create.avatarUploadFailed': "Couldn't upload the image. Try again.",
   'create.blank': 'Blank project',
+  'create.fromFolder': 'From a folder',
+  'create.chooseFolder': 'Choose folder',
+  'create.thisComputer': 'This computer',
+  'create.noOnlineDevices': 'Connect a device in Settings → Devices to choose a folder.',
+  'create.offline': 'Offline',
+  'create.automaticEnvironment': 'Match or create automatically',
   'create.fromGithub': 'From GitHub repository',
   'create.identifierDescription':
     'Replaces the task number prefix for this project, for example ACE. Leave it empty to use the default prefix.',

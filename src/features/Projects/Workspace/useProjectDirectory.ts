@@ -16,6 +16,7 @@ export const directoriesOnDevice = (directories: ProjectDirectory[], deviceId?: 
     ? directories.filter(
         (directory) =>
           directory.deviceId === deviceId &&
+          directory.runnable !== false &&
           !!directory.instanceId &&
           directory.permission === 'readWrite',
       )

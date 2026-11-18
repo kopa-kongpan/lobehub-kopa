@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => {
     create: vi.fn(),
     createDefaultChannel: vi.fn(),
     createSite: vi.fn(),
+    findPersonalByDeviceId: vi.fn(),
+    findWorkspaceDeviceById: vi.fn(),
+    statPath: vi.fn(),
     ProjectIdentifierTakenError,
     resolveCoordinatorAgents: vi.fn(),
   };
@@ -36,6 +39,16 @@ vi.mock('@/business/server/trpc-middlewares/rbacPermission', () => ({
     return (opts: any) => opts.next({ ctx: opts.ctx });
   }),
 }));
+
+vi.mock('@/database/models/device', () => ({
+  DeviceModel: vi.fn(function () {
+    return {
+      findPersonalByDeviceId: mocks.findPersonalByDeviceId,
+      findWorkspaceDeviceById: mocks.findWorkspaceDeviceById,
+    };
+  }),
+}));
+vi.mock('@/server/services/deviceGateway', () => ({ deviceGateway: { statPath: mocks.statPath } }));
 
 vi.mock('@/database/models/project', () => ({
   ProjectIdentifierTakenError: mocks.ProjectIdentifierTakenError,
@@ -239,4 +252,45 @@ describe('project.create with ids the create form reserved', () => {
     await expect(caller('ws-1').create(input)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     expect(mocks.create).not.toHaveBeenCalled();
   });
+});
+
+describe('project.createFromDirectory', () => {
+  const folder = { deviceId: 'mac', path: '/work/example' };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.findPersonalByDeviceId.mockResolvedValue({ platform: 'darwin' });
+    mocks.create.mockResolvedValue({ id: 'project-1', coordinatorAgentId: 'agent-1' });
+    mocks.resolveCoordinatorAgents.mockImplementation(async (projects) => projects);
+  });
+
+  it('checks the selected device and creates a private project with its folder', async () => {
+    mocks.statPath.mockResolvedValue({ exists: true, isDirectory: true });
+    await caller().createFromDirectory({ folder, name: 'Example' });
+    expect(mocks.statPath).toHaveBeenCalledWith({
+      ...folder,
+      userId: 'member',
+      workspaceId: undefined,
+    });
+    expect(mocks.create).toHaveBeenCalledWith({ folder, name: 'Example', visibility: 'private' });
+  });
+
+  it('does not probe a device that is unavailable to this workspace member', async () => {
+    mocks.findWorkspaceDeviceById.mockResolvedValue(undefined);
+    await expect(
+      caller('workspace').createFromDirectory({ folder, name: 'Example' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(mocks.statPath).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, { exists: false, isDirectory: false }, { exists: true, isDirectory: false }])(
+    'rejects a folder that cannot be verified',
+    async (stat) => {
+      mocks.statPath.mockResolvedValue(stat);
+      await expect(caller().createFromDirectory({ folder, name: 'Example' })).rejects.toMatchObject(
+        { code: 'PRECONDITION_FAILED' },
+      );
+      expect(mocks.create).not.toHaveBeenCalled();
+    },
+  );
 });

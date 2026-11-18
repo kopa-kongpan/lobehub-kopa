@@ -16,7 +16,6 @@ import { useSearchParams } from 'react-router';
 
 import AsyncError from '@/components/AsyncError';
 import { getDeviceIcon } from '@/features/DeviceManager/getDeviceIcon';
-import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { deviceSelectors, useDeviceStore } from '@/store/device';
 import { useCurrentProjectDetail, useProjectStore } from '@/store/project';
 import type { ProjectDirectory } from '@/store/projectWorkingDirectory';
@@ -46,7 +45,6 @@ const DevicePresence = ({ device }: { device?: DeviceListItem }) => {
 
 export function WorkingDirectorySettings({ projectId }: { projectId: string }) {
   const { t } = useTranslation('project');
-  const navigate = useWorkspaceAwareNavigate();
   const [params, setParams] = useSearchParams();
   const environmentId = params.get('environment') ?? '';
   useProjectStore((s) => s.useFetchProjectDetail)(projectId);
@@ -99,17 +97,15 @@ export function WorkingDirectorySettings({ projectId }: { projectId: string }) {
           ]}
           onChange={(id) => setParams(id && id !== '__all__' ? { environment: id } : {})}
         />
-        <Button
-          icon={PlusIcon}
-          type="primary"
-          onClick={() =>
-            environments.length
-              ? openAddDirectoryModal(projectId, environmentId || undefined)
-              : navigate(`/project/${projectId}/settings/environments`)
-          }
-        >
-          {t('settings.addDirectory')}
-        </Button>
+        {canManage && (
+          <Button
+            icon={PlusIcon}
+            type="primary"
+            onClick={() => openAddDirectoryModal(projectId, environmentId || undefined)}
+          >
+            {t('settings.addDirectory')}
+          </Button>
+        )}
       </Flexbox>
       {error ? (
         <AsyncError
@@ -130,11 +126,6 @@ export function WorkingDirectorySettings({ projectId }: { projectId: string }) {
       ) : !items.length ? (
         <Flexbox gap={12} paddingBlock={24}>
           <Text type="secondary">{t('settings.noDirectories')}</Text>
-          {!environments.length && (
-            <Button onClick={() => navigate(`/project/${projectId}/settings/environments`)}>
-              {t('settings.addEnvironment')}
-            </Button>
-          )}
         </Flexbox>
       ) : (
         <Flexbox>

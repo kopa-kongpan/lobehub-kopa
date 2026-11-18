@@ -62,6 +62,7 @@ class ProjectService {
       avatar?: string;
       coordinatorAgentId?: string;
       dedicatedAgentId?: string;
+      folder?: { deviceId: string; path: string };
       description?: string;
       id?: string;
       identifier?: string;
@@ -71,10 +72,12 @@ class ProjectService {
       visibility?: ProjectVisibility;
     },
     workspaceId?: string | null,
-  ) =>
-    (workspaceId ? createWorkspaceLambdaClient(workspaceId) : lambdaClient).project.create.mutate(
-      params,
-    );
+  ) => {
+    const client = (workspaceId ? createWorkspaceLambdaClient(workspaceId) : lambdaClient).project;
+    return params.folder
+      ? client.createFromDirectory.mutate({ ...params, folder: params.folder })
+      : client.create.mutate(params);
+  };
 
   rejectCompletion = async (id: string, comment: string) =>
     lambdaClient.project.rejectCompletion.mutate({ comment, id });
