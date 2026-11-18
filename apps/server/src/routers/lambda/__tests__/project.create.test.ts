@@ -258,9 +258,47 @@ describe('project.createFromDirectory', () => {
   const folder = { deviceId: 'mac', path: '/work/example' };
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.assertCanPerformResourceAction.mockReset().mockResolvedValue(undefined);
     mocks.findPersonalByDeviceId.mockResolvedValue({ platform: 'darwin' });
     mocks.create.mockResolvedValue({ id: 'project-1', coordinatorAgentId: 'agent-1' });
     mocks.resolveCoordinatorAgents.mockImplementation(async (projects) => projects);
+  });
+
+  it('uses the chosen workspace agent when creating from folders', async () => {
+    mocks.findWorkspaceDeviceById.mockResolvedValue({ platform: 'darwin' });
+    mocks.statPath.mockResolvedValue({ exists: true, isDirectory: true });
+    const folders = { deviceId: folder.deviceId, paths: [folder.path] };
+
+    await caller('ws-1').createFromDirectory({
+      coordinatorAgentId: 'agent-1',
+      folders,
+      name: 'Example',
+    });
+
+    expect(mocks.assertCanPerformResourceAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'use', resourceId: 'agent-1', workspaceId: 'ws-1' }),
+    );
+    expect(mocks.create).toHaveBeenCalledWith({
+      coordinatorAgentId: 'agent-1',
+      folders,
+      name: 'Example',
+      visibility: 'private',
+    });
+  });
+
+  it('does not create a folder project when the selected agent cannot be used', async () => {
+    mocks.findWorkspaceDeviceById.mockResolvedValue({ platform: 'darwin' });
+    mocks.statPath.mockResolvedValue({ exists: true, isDirectory: true });
+    mocks.assertCanPerformResourceAction.mockRejectedValue(new TRPCError({ code: 'FORBIDDEN' }));
+
+    await expect(
+      caller('ws-1').createFromDirectory({
+        coordinatorAgentId: 'agent-1',
+        folder,
+        name: 'Example',
+      }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it('checks the selected device and creates a private project with its folder', async () => {

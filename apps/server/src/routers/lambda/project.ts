@@ -147,6 +147,7 @@ async function saveNewProject(
   ctx: ProjectCreateContext,
   input: Parameters<ProjectRepository['create']>[0],
 ) {
+  if (input.coordinatorAgentId) await assertResourceUsable(ctx, 'agent', input.coordinatorAgentId);
   const project = await withMainAgent(
     ctx.projectModel,
     await ctx.projectRepo.create(input).catch(rethrowDuplicateProjectField),
@@ -163,6 +164,7 @@ async function saveNewProject(
 
 const projectNameFields = {
   avatar: z.string().optional(),
+  coordinatorAgentId: z.string().optional(),
   /** The create form uses the reserved IDs as avatar seeds before it saves. */
   dedicatedAgentId: z.string().regex(PROJECT_AGENT_ID_REGEX).optional(),
   id: z.string().regex(PROJECT_ID_REGEX).optional(),
@@ -236,7 +238,6 @@ export const projectRouter = router({
     .input(
       z.object({
         ...projectNameFields,
-        coordinatorAgentId: z.string().optional(),
         description: z.string().optional(),
         repository: z
           .object({
@@ -250,8 +251,6 @@ export const projectRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       try {
-        if (input.coordinatorAgentId)
-          await assertResourceUsable(ctx, 'agent', input.coordinatorAgentId);
         return await saveNewProject(ctx, input);
       } catch (error) {
         mapProjectError(error, 'create');

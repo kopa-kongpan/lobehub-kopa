@@ -43,8 +43,8 @@ interface FormState {
 
 /**
  * New project from a GitHub repository: pick one the connected GitHub App can
- * read, or paste a URL, and the project is named after it, led by an agent of
- * its own, and created with the repository attached as its environment —
+ * read, or paste a URL, and the project is named after it and created with
+ * the repository attached as its environment —
  * no fields to fill unless the defaults are wrong.
  */
 const CreateFromGithubContent = () => {
@@ -62,6 +62,7 @@ const CreateFromGithubContent = () => {
 
   // Taken once per open dialog: the dedicated agent's previewed character is seeded by it.
   const [reservedIds] = useState(reserveProjectIds);
+  const [coordinatorAgentId, setCoordinatorAgentId] = useState<string | null>(null);
 
   const repository = parseGithubRepository(form.url);
   const urlInvalid = Boolean(form.url.trim()) && !repository;
@@ -103,16 +104,17 @@ const CreateFromGithubContent = () => {
     setForm((current) => ({ ...current, loading: true }));
     try {
       const project = await createProject({
-        ...buildCreateProjectRequest(createInput, { ids: reservedIds }),
+        ...buildCreateProjectRequest(createInput, { coordinatorAgentId, ids: reservedIds }),
         repository: {
           defaultBranch: form.defaultBranch,
           name: repository.fullName,
           url: repository.url,
         },
       });
-      // The project created an agent and maybe the Project label; show both.
-      const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
-      void Promise.all([refreshAgentList(), refreshAgentLabels()]);
+      if (!coordinatorAgentId) {
+        const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
+        void Promise.all([refreshAgentList(), refreshAgentLabels()]);
+      }
       close();
       navigate(`/project/${project.slug ?? project.id}`);
     } catch (error) {
@@ -210,7 +212,13 @@ const CreateFromGithubContent = () => {
           </Text>
         )}
         {repository && (
-          <MainAgentSection dedicatedAgentId={reservedIds.agentId} projectName={form.name} />
+          <MainAgentSection
+            coordinatorAgentId={coordinatorAgentId}
+            dedicatedAgentId={reservedIds.agentId}
+            disabled={form.loading}
+            projectName={form.name}
+            onChange={setCoordinatorAgentId}
+          />
         )}
       </Flexbox>
       <ModalFooter>

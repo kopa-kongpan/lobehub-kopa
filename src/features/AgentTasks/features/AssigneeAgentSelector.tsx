@@ -9,7 +9,7 @@ import {
   Text,
   Tooltip,
 } from '@lobehub/ui';
-import { ChevronDown, ChevronRight, UserRoundX } from 'lucide-react';
+import { ChevronDown, ChevronRight, PlusIcon, UserRoundX } from 'lucide-react';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import { memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -44,6 +44,8 @@ interface AssigneeAgentSelectorProps {
   disabled?: boolean;
   /** Why `disabled` holds; defaults to the running-Task explanation. */
   disabledReason?: string;
+  /** Label for a custom action that returns null instead of an agent ID. */
+  emptySelectionLabel?: string;
   onChange?: (agentId: string | null) => void;
   /**
    * The task's creator. On a public task, lets its creator pick a private
@@ -52,6 +54,7 @@ interface AssigneeAgentSelectorProps {
   taskCreatorId?: string | null;
   taskIdentifier?: string;
   taskVisibility?: 'private' | 'public' | null;
+  triggerLabel?: string;
 }
 
 type AgentOption =
@@ -85,7 +88,6 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     color: ${cssVar.colorText};
 
     background: transparent;
-    outline: none;
 
     &::placeholder {
       color: ${cssVar.colorTextPlaceholder};
@@ -158,10 +160,12 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
     currentAgentId,
     disabled,
     disabledReason,
+    emptySelectionLabel,
     onChange,
     taskCreatorId,
     taskIdentifier,
     taskVisibility,
+    triggerLabel,
   }) => {
     const { t } = useTranslation(['chat', 'common', 'topic']);
     const { allowed: canEditTask, reason } = usePermission('create_content');
@@ -215,7 +219,7 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
       [query, recentIds, scopes],
     );
 
-    const unassignedLabel = t('taskList.unassigned', { ns: 'chat' });
+    const unassignedLabel = emptySelectionLabel ?? t('taskList.unassigned', { ns: 'chat' });
     const showUnassigned =
       allowUnassigned && (!query || unassignedLabel.toLowerCase().includes(query));
 
@@ -328,9 +332,10 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
 
     const handleAgentChange = useCallback(
       (agentId: string | null, agent?: SidebarAgentItem) => {
-        if (!canEditTask || agentId === (currentAgentId ?? null)) return;
+        if (!canEditTask) return;
         setKey((value) => value + 1);
         setSearch('');
+        if (agentId === (currentAgentId ?? null)) return;
 
         if (!offerPrivateOnPublic || !taskIdentifier || !agentId || !privateAgentIds.has(agentId)) {
           void assignAgent(agentId, agent);
@@ -460,9 +465,15 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
           ) : (
             <NavItem
               active={active}
-              icon={<Icon color={cssVar.colorTextDescription} icon={UserRoundX} size={18} />}
               style={{ flexShrink: 0 }}
               title={unassignedLabel}
+              icon={
+                <Icon
+                  color={cssVar.colorTextDescription}
+                  icon={emptySelectionLabel ? PlusIcon : UserRoundX}
+                  size={18}
+                />
+              }
               onClick={() => handleSelect(option)}
             />
           )}
@@ -529,6 +540,7 @@ const AssigneeAgentSelector = memo<AssigneeAgentSelectorProps>(
         placement={'bottomLeft'}
         styles={{ content: { padding: 0, width: 320 } }}
         trigger={'click'}
+        triggerProps={triggerLabel ? { 'aria-label': triggerLabel } : undefined}
         content={
           <Suspense fallback={<SkeletonList rows={6} />}>
             {isAgentListInit ? (

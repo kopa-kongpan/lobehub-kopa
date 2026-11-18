@@ -199,7 +199,7 @@ export default {
   'create.identifierTaken': 'Another project in this workspace already uses this identifier.',
   'create.mainAgentDedicatedDescription':
     'Creates an agent named after the project, with its avatar and the Project label. It stays in your agents list.',
-  'create.mainAgentDedicatedPlaceholder': 'Named after the project',
+  'create.mainAgentDedicatedPlaceholder': 'Create from project name',
   'create.mainAgentDedicatedTag': 'New',
   'create.mainAgentLabel': 'Main agent',
   'create.nameLabel': 'Project name',

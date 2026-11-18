@@ -73,6 +73,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
   });
   // Taken once per open modal: both generated avatars are seeded by these ids.
   const [reservedIds] = useState(reserveProjectIds);
+  const [coordinatorAgentId, setCoordinatorAgentId] = useState<string | null>(null);
   const [folder, setFolder] = useState<ProjectFolderSelection>();
   const [nameEdited, setNameEdited] = useState(false);
   const [folderError, setFolderError] = useState(false);
@@ -122,12 +123,17 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
     updateForm({ loading: true });
     try {
       const project = await createProject({
-        ...buildCreateProjectRequest(createInput, { avatar: form.avatar, ids: reservedIds }),
+        ...buildCreateProjectRequest(createInput, {
+          avatar: form.avatar,
+          coordinatorAgentId,
+          ids: reservedIds,
+        }),
         ...(folder && { folders: folder }),
       });
-      // The project created an agent and maybe the Project label; show both.
-      const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
-      void Promise.all([refreshAgentList(), refreshAgentLabels()]);
+      if (!coordinatorAgentId) {
+        const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
+        void Promise.all([refreshAgentList(), refreshAgentLabels()]);
+      }
       close();
       if (onCreated) onCreated(project);
       else navigate(`/project/${project.slug ?? project.id}`);
@@ -213,9 +219,12 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
           </ProjectAvatarField>
         </Flexbox>
         <MainAgentSection
+          coordinatorAgentId={coordinatorAgentId}
           dedicatedAgentId={reservedIds.agentId}
+          disabled={form.loading}
           projectAvatar={form.avatar}
           projectName={form.name}
+          onChange={setCoordinatorAgentId}
         />
         <CreateProjectMoreFields
           identifier={form.identifier}

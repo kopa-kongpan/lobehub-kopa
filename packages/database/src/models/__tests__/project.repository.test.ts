@@ -90,6 +90,36 @@ describe('project creation and its resources', () => {
     expect(await serverDB.select().from(agents)).toEqual([]);
   });
 
+  it('attaches folders and links the existing agent without changing its configuration', async () => {
+    const [agent] = await serverDB
+      .insert(agents)
+      .values({
+        agencyConfig: { executionTarget: 'sandbox' },
+        systemRole: 'Maintain the existing application.',
+        title: 'Existing agent',
+        userId,
+      })
+      .returning();
+    await serverDB.insert(devices).values({
+      deviceId: 'shared-mac',
+      identitySource: 'fallback',
+      platform: 'darwin',
+      userId,
+    });
+
+    const project = await repo.create({
+      coordinatorAgentId: agent.id,
+      folders: { deviceId: 'shared-mac', paths: ['/work/app'] },
+      name: 'App',
+    });
+
+    expect(project.coordinatorAgentId).toBe(agent.id);
+    expect(await serverDB.select().from(agents)).toEqual([agent]);
+    expect(await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id)).toEqual([
+      expect.objectContaining({ deviceId: 'shared-mac', path: '/work/app', runnable: true }),
+    ]);
+  });
+
   it('rolls back earlier folders when a later folder cannot be bound to an existing project', async () => {
     await serverDB
       .insert(devices)

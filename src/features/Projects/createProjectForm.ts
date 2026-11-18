@@ -133,20 +133,20 @@ export const reserveProjectIds = (): ReservedProjectIds => ({
 
 export interface CreateProjectExtras {
   avatar?: string;
+  coordinatorAgentId?: string | null;
   ids: ReservedProjectIds;
 }
 
 /**
  * Leaving `coordinatorAgentId` out is what makes the server create an agent
- * for the project, named after it and wearing its avatar. Every project the
- * create dialogs make is led by such a dedicated agent.
+ * for the project, named after it and wearing its avatar.
  */
 export const buildCreateProjectRequest = (
   input: NonNullable<ReturnType<typeof getCreateProjectInput>>,
-  { avatar, ids }: CreateProjectExtras,
+  { avatar, coordinatorAgentId, ids }: CreateProjectExtras,
 ) => ({
   ...input,
-  dedicatedAgentId: ids.agentId,
+  ...(coordinatorAgentId ? { coordinatorAgentId } : { dedicatedAgentId: ids.agentId }),
   id: ids.projectId,
   ...(avatar ? { avatar } : {}),
 });

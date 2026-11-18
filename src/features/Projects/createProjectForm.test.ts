@@ -159,6 +159,15 @@ describe('createProjectForm', () => {
     });
   });
 
+  it('uses the selected agent instead of the reserved dedicated agent', () => {
+    expect(
+      buildCreateProjectRequest({ name: 'Launch' }, { coordinatorAgentId: 'agt_existing', ids }),
+    ).toEqual({ coordinatorAgentId: 'agt_existing', id: 'prj_BBBBBBBBBBBB', name: 'Launch' });
+    expect(
+      buildCreateProjectRequest({ name: 'Launch' }, { coordinatorAgentId: null, ids }),
+    ).toEqual({ dedicatedAgentId: 'agt_AAAAAAAAAAAA', id: 'prj_BBBBBBBBBBBB', name: 'Launch' });
+  });
+
   it('sends neither a project type nor a site, whatever the caller passes', () => {
     expect(
       buildCreateProjectRequest({ name: 'Launch' }, {
