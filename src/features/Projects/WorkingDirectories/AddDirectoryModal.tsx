@@ -4,10 +4,9 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AsyncError from '@/components/AsyncError';
-import { deviceService } from '@/services/device';
 import { useProjectDirectoryStore, useProjectEnvironments } from '@/store/projectWorkingDirectory';
 
-import { projectFolderName, type ProjectFolderSelection } from '../projectFolder';
+import type { ProjectFolderSelection } from '../projectFolder';
 import ProjectFolderField from '../ProjectFolderField';
 
 interface AddDirectoryOptions {
@@ -33,22 +32,19 @@ function AddDirectoryContent({
   const [folder, setFolder] = useState<ProjectFolderSelection>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>();
-  const bind = useProjectDirectoryStore((s) => s.bind);
+  const bindFolders = useProjectDirectoryStore((s) => s.bindFolders);
   const { close } = useModalContext();
   const save = async () => {
     if (!folder || pending) return;
-    const { deviceId, path } = folder;
+    const { deviceId, paths } = folder;
     setPending(true);
     setError(undefined);
     try {
-      const stat = await deviceService.statPath(deviceId, path);
-      if (!stat?.exists || !stat.isDirectory) throw new Error(t('settings.directoryUnavailable'));
-      const added = await bind({
+      const [added] = await bindFolders({
         projectId,
         environmentId: environmentId || undefined,
         deviceId,
-        path,
-        name: projectFolderName(path),
+        paths,
       });
       close();
       // The device picked here, not the one the caller suggested: the person may have changed it.

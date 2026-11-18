@@ -1,33 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { openPickWorkingDirModal } from '@/features/WorkingDirectory';
 import { electronSystemService } from '@/services/electron/system';
 
-import { chooseProjectFolder, projectFolderName } from './projectFolder';
+import { pickProjectFolders } from './PickProjectFoldersModal';
+import { chooseProjectFolders, projectFolderName } from './projectFolder';
 
-vi.mock('@/features/WorkingDirectory', () => ({ openPickWorkingDirModal: vi.fn() }));
+vi.mock('./PickProjectFoldersModal', () => ({ pickProjectFolders: vi.fn() }));
 vi.mock('@/services/electron/system', () => ({ electronSystemService: { selectFolder: vi.fn() } }));
 
-describe('choosing a project folder', () => {
-  it('uses the system picker for this desktop and leaves the old choice intact on cancel', async () => {
-    const options = { deviceId: 'mac', local: true, onPick: vi.fn(), title: 'Choose folder' };
+describe('choosing project folders', () => {
+  const options = { deviceId: 'mac', local: true, title: 'Choose folders' };
+  it('returns every selected local folder and an empty selection on cancel', async () => {
     vi.mocked(electronSystemService.selectFolder)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce({ path: '/Users/test/demo' });
-    await chooseProjectFolder(options);
-    expect(options.onPick).not.toHaveBeenCalled();
-    await chooseProjectFolder(options);
-    expect(options.onPick).toHaveBeenCalledWith({ deviceId: 'mac', path: '/Users/test/demo' });
+      .mockResolvedValueOnce({ path: '/A', paths: ['/A', '/B'] })
+      .mockResolvedValueOnce({ path: '/legacy' });
+    await expect(chooseProjectFolders(options)).resolves.toEqual([]);
+    await expect(chooseProjectFolders(options)).resolves.toEqual(['/A', '/B']);
+    await expect(chooseProjectFolders(options)).resolves.toEqual(['/legacy']);
+    expect(electronSystemService.selectFolder).toHaveBeenCalledWith({
+      multiple: true,
+      title: 'Choose folders',
+    });
   });
-
-  it('keeps a Windows directory on the device it was picked from', async () => {
-    const onPick = vi.fn();
-    await chooseProjectFolder({ deviceId: 'win', local: false, onPick, title: 'Choose folder' });
-    const picker = vi.mocked(openPickWorkingDirModal).mock.lastCall![0];
-    expect(picker.deviceId).toBe('win');
-    const path = 'C:\\Work\\demo';
-    await picker.onPick({ path });
-    expect(onPick).toHaveBeenCalledWith({ deviceId: 'win', path });
-    expect(projectFolderName(path)).toBe('demo');
+  it('uses the enrolled device browser outside the native desktop', async () => {
+    const paths = ['C:\\Work\\demo', 'C:\\Work\\docs'];
+    vi.mocked(pickProjectFolders).mockResolvedValue(paths);
+    await expect(
+      chooseProjectFolders({ ...options, deviceId: 'win', local: false }),
+    ).resolves.toEqual(paths);
+    expect(pickProjectFolders).toHaveBeenCalledWith({ deviceId: 'win', title: 'Choose folders' });
+    expect(projectFolderName(paths[0])).toBe('demo');
   });
 });

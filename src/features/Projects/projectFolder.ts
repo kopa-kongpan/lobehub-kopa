@@ -1,35 +1,27 @@
-import { openPickWorkingDirModal } from '@/features/WorkingDirectory';
 import { electronSystemService } from '@/services/electron/system';
+
+import { pickProjectFolders } from './PickProjectFoldersModal';
 
 export interface ProjectFolderSelection {
   deviceId: string;
-  path: string;
+  paths: string[];
 }
 
 export const projectFolderName = (path: string) => path.split(/[\\/]/).findLast(Boolean) || path;
 
-export async function chooseProjectFolder({
+export async function chooseProjectFolders({
   defaultPath,
   deviceId,
   local,
-  onPick,
   title,
 }: {
   defaultPath?: string;
   deviceId: string;
   local: boolean;
-  onPick: (folder: ProjectFolderSelection) => void;
   title: string;
-}) {
-  if (local) {
-    const result = await electronSystemService.selectFolder({ defaultPath, title });
-    if (result) onPick({ deviceId, path: result.path });
-    return;
-  }
-
-  openPickWorkingDirModal({
-    defaultPath,
-    deviceId,
-    onPick: ({ path }) => onPick({ deviceId, path }),
-  });
+}): Promise<string[]> {
+  if (!local) return pickProjectFolders({ defaultPath, deviceId, title });
+  const result = await electronSystemService.selectFolder({ defaultPath, multiple: true, title });
+  // Older desktop shells return just the first path; the form also supports adding another pick.
+  return result?.paths ?? (result ? [result.path] : []);
 }

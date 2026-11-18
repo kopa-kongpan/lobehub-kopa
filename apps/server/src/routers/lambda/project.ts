@@ -14,13 +14,11 @@ import {
   type WorkspaceRole,
   wsCompatProcedure,
 } from '@/business/server/trpc-middlewares/workspaceAuth';
-import { DeviceModel } from '@/database/models/device';
 import {
   ProjectIdentifierTakenError,
   ProjectModel,
   type ProjectModelOptions,
 } from '@/database/models/project';
-import { normalizeProjectDirectory } from '@/database/models/projectWorkingDirectory';
 import { ProjectRepository } from '@/database/repositories/project';
 import { ProjectCoordinatorRepository } from '@/database/repositories/projectCoordinator';
 import { ProjectOverviewRepository } from '@/database/repositories/projectOverview';
@@ -28,11 +26,11 @@ import type { LobeChatDatabase } from '@/database/type';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { createDefaultChannel } from '@/server/services/channel/defaultChannel';
-import { deviceGateway } from '@/server/services/deviceGateway';
 import { GoalService } from '@/server/services/goal';
 import { assertCanPerformResourceAction } from '@/server/services/resourcePermission';
 
 import { rethrowDuplicateProjectField } from './_helpers/projectConstraintErrors';
+import { projectFolderSelection, verifyProjectFolders } from './_helpers/projectDirectorySelection';
 
 /**
  * Reads `workspaceRole` as an optional context field: the cloud workspace-auth
@@ -262,45 +260,28 @@ export const projectRouter = router({
 
   createFromDirectory: projectWriteProcedure
     .input(
-      z.object({
-        ...projectNameFields,
-        folder: z.object({
-          deviceId: z.string().min(1).max(64),
-          path: z.string().min(1).max(4096),
-        }),
-      }),
+      z.object(projectNameFields).and(
+        z.union([
+          z.object({ folders: projectFolderSelection }),
+          // Older desktop clients submit just one path.
+          z
+            .object({
+              folder: z.object({
+                deviceId: z.string().min(1).max(64),
+                path: z.string().min(1).max(4096),
+              }),
+            })
+            .transform(({ folder }) => ({
+              folders: { deviceId: folder.deviceId, paths: [folder.path] },
+            })),
+        ]),
+      ),
     )
     .mutation(async ({ ctx, input }) => {
-      const { deviceId, path } = input.folder;
-      const workspaceId = ctx.workspaceId ?? undefined;
-      const devices = new DeviceModel(ctx.serverDB, ctx.userId, workspaceId);
-      const device = workspaceId
-        ? await devices.findWorkspaceDeviceById(deviceId)
-        : await devices.findPersonalByDeviceId(deviceId);
-      if (!device) throw new TRPCError({ code: 'NOT_FOUND', message: 'Device unavailable' });
-      let directory: string;
+      const { folders, ...fields } = input;
+      const verified = await verifyProjectFolders(ctx, folders);
       try {
-        directory = normalizeProjectDirectory(path, device.platform);
-      } catch {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'An absolute directory path is required',
-        });
-      }
-      const stat = await deviceGateway.statPath({
-        deviceId,
-        path: directory,
-        userId: ctx.userId,
-        workspaceId,
-      });
-      if (!stat?.exists || !stat.isDirectory)
-        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Directory unavailable' });
-      try {
-        return await saveNewProject(ctx, {
-          ...input,
-          folder: { deviceId, path: directory },
-          visibility: 'private',
-        });
+        return await saveNewProject(ctx, { ...fields, folders: verified, visibility: 'private' });
       } catch (error) {
         mapProjectError(error, 'createFromDirectory');
       }

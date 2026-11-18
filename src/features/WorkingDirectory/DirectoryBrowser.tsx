@@ -1,6 +1,16 @@
 'use client';
 
-import { ActionIcon, Button, cssVar, Flexbox, Icon, Input, Spin, Text } from '@lobehub/ui';
+import {
+  ActionIcon,
+  Button,
+  Checkbox,
+  cssVar,
+  Flexbox,
+  Icon,
+  Input,
+  Spin,
+  Text,
+} from '@lobehub/ui';
 import {
   ArrowUpIcon,
   CircleAlertIcon,
@@ -25,6 +35,7 @@ export interface DirectoryBrowserProps {
   description?: ReactNode;
   error?: string;
   loading: boolean;
+  multiSelect?: { confirmLabel: (count: number) => string; onSelect: (paths: string[]) => void };
   onCancel: () => void;
   /** Switch to typing a path; absent where a path cannot be typed. */
   onManual?: (path: string) => void;
@@ -77,12 +88,14 @@ export const DirectoryBrowser = ({
   description,
   error: submitError,
   loading,
+  multiSelect,
   onCancel,
   onManual,
   onSelect,
   pickExtra,
   source,
 }: DirectoryBrowserProps) => {
+  const [selected, setSelected] = useState<string[]>([]);
   const { t } = useTranslation('device');
   const { t: tCommon } = useTranslation('common');
   const {
@@ -222,7 +235,7 @@ export const DirectoryBrowser = ({
               const disabled = loading || !!entry.disabled;
               const activate = () => navigate(entry.path);
 
-              return (
+              const item = (
                 <NavItem
                   actions={entry.actions}
                   aria-disabled={disabled}
@@ -244,6 +257,26 @@ export const DirectoryBrowser = ({
                     }
                   }}
                 />
+              );
+              if (!multiSelect) return item;
+              return (
+                <Flexbox horizontal align="center" gap={8} key={entry.path}>
+                  <Checkbox
+                    aria-label={entry.path}
+                    checked={selected.includes(entry.path)}
+                    disabled={disabled || !!source.selectBlockedReason?.(entry.path)}
+                    onChange={(checked) =>
+                      setSelected((current) =>
+                        checked
+                          ? [...new Set([...current, entry.path])]
+                          : current.filter((path) => path !== entry.path),
+                      )
+                    }
+                  />
+                  <Flexbox flex={1} style={{ minWidth: 0 }}>
+                    {item}
+                  </Flexbox>
+                </Flexbox>
               );
             })}
             {error ? (
@@ -288,12 +321,18 @@ export const DirectoryBrowser = ({
             {tCommon('cancel')}
           </Button>
           <Button
-            disabled={!canUseDirectory || !!blockedReason}
+            disabled={!(multiSelect && selected.length) && (!canUseDirectory || !!blockedReason)}
             loading={loading}
             type={'primary'}
-            onClick={() => directory && onSelect(directory.path)}
+            onClick={() =>
+              multiSelect && selected.length
+                ? multiSelect.onSelect(selected)
+                : directory && onSelect(directory.path)
+            }
           >
-            {t('workingDirectory.useFolder')}
+            {multiSelect && selected.length
+              ? multiSelect.confirmLabel(selected.length)
+              : t('workingDirectory.useFolder')}
           </Button>
         </Flexbox>
       </Flexbox>

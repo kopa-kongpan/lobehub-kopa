@@ -11,11 +11,6 @@ import { projectEnvironments } from '../../schemas/projectEnvironment';
 import type { LobeChatDatabase } from '../../type';
 import { ProjectDirectoryRepository } from '../projectDirectory';
 
-export interface ProjectFolder {
-  deviceId: string;
-  path: string;
-}
-
 /**
  * Cross-aggregate write flow for projects. Creating a project also creates (or
  * binds) its main agent — an `agents` row that AgentModel owns and that outlives
@@ -33,9 +28,9 @@ export class ProjectRepository {
   async create({
     dedicatedAgentId,
     repository,
-    folder,
+    folders,
     ...input
-  }: CreateProjectInput & { folder?: ProjectFolder }) {
+  }: CreateProjectInput & { folders?: { deviceId: string; paths: string[] } }) {
     const identifier = normalizeProjectIdentifier(input.identifier);
 
     return this.db.transaction(async (tx) => {
@@ -57,7 +52,7 @@ export class ProjectRepository {
             {
               avatar: input.avatar,
               id: dedicatedAgentId,
-              folder,
+              folder: folders && { deviceId: folders.deviceId, path: folders.paths[0] },
               name: input.name,
               visibility: input.visibility,
             },
@@ -107,10 +102,10 @@ export class ProjectRepository {
         });
       }
 
-      if (folder) {
-        await new ProjectDirectoryRepository(db, this.userId, this.workspaceId).bind({
-          ...folder,
-          name: input.name,
+      if (folders) {
+        await new ProjectDirectoryRepository(db, this.userId, this.workspaceId).bindFolders({
+          ...folders,
+          firstName: input.name,
           projectId: project.id,
         });
       }

@@ -59,7 +59,7 @@ interface ProjectStore extends ProjectStoreState {
     coordinatorAgentId?: string;
     /** Reserved id of the dedicated main agent; see `reserveProjectIds`. */
     dedicatedAgentId?: string;
-    folder?: { deviceId: string; path: string };
+    folders?: { deviceId: string; paths: string[] };
     /** Reserved project id; see `reserveProjectIds`. */
     id?: string;
     identifier?: string;

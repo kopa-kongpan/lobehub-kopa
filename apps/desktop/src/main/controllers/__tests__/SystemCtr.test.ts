@@ -66,6 +66,7 @@ vi.mock('electron', () => ({
     getSources: vi.fn(async () => []),
   },
   dialog: {
+    showOpenDialog: vi.fn(),
     showMessageBox: vi.fn(async () => ({ response: 0 })),
   },
   ipcMain: {
@@ -167,6 +168,7 @@ const mockPermissionGuide = {
 };
 
 const mockApp = {
+  localFileProtocolManager: { approveWorkspaceRoot: vi.fn(async (path: string) => path) },
   appStoragePath: '/mock/storage',
   browserManager: mockBrowserManager,
   getController: vi.fn(() => ({
@@ -191,6 +193,34 @@ describe('SystemController', () => {
     fontListGetFonts2Mock.mockResolvedValue([]);
     mockPermissionGuide.open.mockResolvedValue(false);
     controller = new SystemController(mockApp);
+  });
+
+  it('opens a native multi-directory dialog and approves only the selected folders', async () => {
+    const { dialog } = await import('electron');
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+      canceled: false,
+      filePaths: ['/A', '/B'],
+    });
+    mockStoreManager.get.mockReturnValueOnce([]).mockReturnValueOnce(['/A']);
+    await expect(invokeIpc('system.selectFolder', { multiple: true })).resolves.toEqual({
+      path: '/A',
+      paths: ['/A', '/B'],
+    });
+    expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        properties: ['openDirectory', 'createDirectory', 'multiSelections'],
+      }),
+    );
+    expect(mockApp.localFileProtocolManager.approveWorkspaceRoot).toHaveBeenCalledWith('/A');
+    expect(mockApp.localFileProtocolManager.approveWorkspaceRoot).toHaveBeenCalledWith('/B');
+  });
+
+  it('leaves approved folders alone when the native dialog is cancelled', async () => {
+    const { dialog } = await import('electron');
+    vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] });
+    await expect(invokeIpc('system.selectFolder', { multiple: true })).resolves.toBeUndefined();
+    expect(mockApp.localFileProtocolManager.approveWorkspaceRoot).not.toHaveBeenCalled();
   });
 
   describe('getAppState', () => {

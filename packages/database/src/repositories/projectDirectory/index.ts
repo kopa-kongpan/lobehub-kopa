@@ -124,6 +124,36 @@ export class ProjectDirectoryRepository {
     return project;
   }
 
+  async bindFolders(input: {
+    deviceId: string;
+    environmentId?: string;
+    firstName?: string;
+    paths: string[];
+    projectId: string;
+  }) {
+    return this.db.transaction(async (tx) => {
+      const repo = new ProjectDirectoryRepository(
+        tx as LobeChatDatabase,
+        this.userId,
+        this.workspaceId,
+      );
+      const directories = [];
+      for (const path of new Set(input.paths)) {
+        const basename = path.split(/[\\/]/).findLast(Boolean) || path;
+        directories.push(
+          await repo.bind({
+            deviceId: input.deviceId,
+            environmentId: input.environmentId,
+            name: directories.length === 0 && input.firstName ? input.firstName : basename,
+            path,
+            projectId: input.projectId,
+          }),
+        );
+      }
+      return directories;
+    });
+  }
+
   async bind(input: BindProjectDirectoryInput) {
     await this.assertManageableProject(input.projectId);
     return this.db.transaction(async (tx) => {

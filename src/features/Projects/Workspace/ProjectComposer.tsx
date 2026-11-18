@@ -151,7 +151,11 @@ const ProjectComposer = memo<ProjectComposerProps>(({ detail, request }) => {
   const repositoryState = useProjectRepository(project.id, sharedAgent);
   const canManageProject = useCanManageProject();
   const location = useProjectWorkLocation(agentId);
-  const directoryState = useProjectDirectory(project.id, location.machineDeviceId);
+  const directoryState = useProjectDirectory(
+    project.id,
+    location.machineDeviceId,
+    location.defaultDirectory,
+  );
   // A task is not started in a conversation, so it has no repository or folder to pick.
   const place =
     mode !== 'chat'

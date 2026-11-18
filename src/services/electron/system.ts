@@ -122,9 +122,10 @@ class ElectronSystemService {
    * Open native folder picker dialog
    */
   async selectFolder(params?: {
+    multiple?: boolean;
     defaultPath?: string;
     title?: string;
-  }): Promise<{ path: string; repoType?: 'git' | 'github' } | undefined> {
+  }): Promise<{ path: string; paths?: string[]; repoType?: 'git' | 'github' } | undefined> {
     return this.ipc.system.selectFolder(params);
   }
 }

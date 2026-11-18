@@ -2,6 +2,7 @@
 
 import { isDesktop } from '@lobechat/const';
 import type { DeviceExecutionTarget } from '@lobechat/types';
+import { getWorkingDirSourcePath } from '@lobechat/types';
 
 import { useSelectExecutionTarget } from '@/features/ChatInput/hooks/useSelectExecutionTarget';
 import { devicePoolForAgent } from '@/features/ExecutionTargetPicker';
@@ -55,6 +56,9 @@ export const useProjectWorkLocation = (agentId: string) => {
     boundDevice,
     /** This desktop's gateway id, on desktop only. */
     currentDeviceId,
+    defaultDirectory: boundDevice
+      ? getWorkingDirSourcePath(agencyConfig?.workingDirByDevice?.[boundDevice.deviceId])
+      : undefined,
     /** Whether the place is shown at all; a member without access sees nothing. */
     displayed: canDisplayExecutionTarget,
     /**

@@ -62,7 +62,7 @@ class ProjectService {
       avatar?: string;
       coordinatorAgentId?: string;
       dedicatedAgentId?: string;
-      folder?: { deviceId: string; path: string };
+      folders?: { deviceId: string; paths: string[] };
       description?: string;
       id?: string;
       identifier?: string;
@@ -74,8 +74,8 @@ class ProjectService {
     workspaceId?: string | null,
   ) => {
     const client = (workspaceId ? createWorkspaceLambdaClient(workspaceId) : lambdaClient).project;
-    return params.folder
-      ? client.createFromDirectory.mutate({ ...params, folder: params.folder })
+    return params.folders
+      ? client.createFromDirectory.mutate({ ...params, folders: params.folders })
       : client.create.mutate(params);
   };
 

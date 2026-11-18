@@ -22,6 +22,8 @@ class ProjectWorkingDirectoryService {
     lambdaClient.projectWorkingDirectory.attachRepository.mutate(input);
   bind = (input: BindProjectDirectoryInput) =>
     lambdaClient.projectWorkingDirectory.bind.mutate(input);
+  bindFolders = (input: Parameters<Client['bindFolders']['mutate']>[0]) =>
+    lambdaClient.projectWorkingDirectory.bindFolders.mutate(input);
   list = (projectId?: string) => lambdaClient.projectWorkingDirectory.list.query({ projectId });
   listTopics = (id: string) => lambdaClient.projectWorkingDirectory.listTopics.query({ id });
   listEnvironmentTopics = async (directoryIds: string[]) => {

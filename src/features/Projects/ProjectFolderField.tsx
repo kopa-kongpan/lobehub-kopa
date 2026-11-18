@@ -1,16 +1,13 @@
 import { isDesktop } from '@lobechat/const';
-import { Button, Flexbox, Select, Text, toast } from '@lobehub/ui';
-import { FolderOpenIcon } from 'lucide-react';
+import { ActionIcon, Button, Flexbox, Select, Text, toast } from '@lobehub/ui';
+import { FolderOpenIcon, XIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import AsyncError from '@/components/AsyncError';
-import { devicePoolForAgent } from '@/features/ExecutionTargetPicker';
-import { useLocalMachineDeviceIds } from '@/hooks/useLocalMachineDeviceIds';
-import { useDeviceList } from '@/store/device';
 
-import { chooseProjectFolder, type ProjectFolderSelection } from './projectFolder';
+import { chooseProjectFolders, type ProjectFolderSelection } from './projectFolder';
+import { useProjectFolderDevices } from './useProjectFolderDevices';
 
 interface Props {
   disabled: boolean;
@@ -21,31 +18,29 @@ interface Props {
 
 export default function ProjectFolderField({ disabled, initialDeviceId, onChange, value }: Props) {
   const { t } = useTranslation(['project', 'device', 'common']);
-  const devices = useDeviceList({ refreshInterval: 15_000 });
-  const workspaceId = useActiveWorkspaceId();
-  const localIds = useLocalMachineDeviceIds();
-  const pool = devicePoolForAgent(devices.data, !!workspaceId);
-  const online = pool.filter((d) => d.online && !d.onlineUnknown);
+  const { devices, localIds, online, pool, preferred } = useProjectFolderDevices();
   const [chosen, setChosen] = useState(initialDeviceId);
-  const deviceId =
-    value?.deviceId ??
-    chosen ??
-    online.find((d) => localIds.includes(d.deviceId))?.deviceId ??
-    (online.length === 1 ? online[0].deviceId : undefined);
-  const canBrowse = devices.isConfirmed && online.some((d) => d.deviceId === deviceId);
+  const deviceId = value?.deviceId ?? chosen ?? preferred?.deviceId;
+  const canBrowse = online.some((device) => device.deviceId === deviceId);
+  const [browsing, setBrowsing] = useState(false);
+  const selectingLocal = !!deviceId && isDesktop && localIds.includes(deviceId);
   const browse = async () => {
-    if (!deviceId || !canBrowse) return;
+    if (!deviceId || !canBrowse || browsing) return;
+    setBrowsing(true);
     try {
-      await chooseProjectFolder({
-        defaultPath: value?.path,
+      const picked = await chooseProjectFolders({
+        defaultPath: value?.paths.at(-1),
         deviceId,
-        local: isDesktop && localIds.includes(deviceId),
-        onPick: onChange,
+        local: selectingLocal,
         title: t('create.chooseFolder'),
       });
+      if (picked.length)
+        onChange({ deviceId, paths: [...new Set([...(value?.paths ?? []), ...picked])] });
     } catch (error) {
       console.error('Failed to open project folder picker', error);
       toast.error(t('workingDirectory.addFolderFailed', { ns: 'device' }));
+    } finally {
+      setBrowsing(false);
     }
   };
 
@@ -56,7 +51,7 @@ export default function ProjectFolderField({ disabled, initialDeviceId, onChange
       </Text>
       <Select
         aria-label={t('directories.device')}
-        disabled={disabled || !devices.isConfirmed}
+        disabled={disabled || browsing || !devices.isConfirmed}
         loading={devices.isLoading}
         placeholder={t('directories.device')}
         value={deviceId}
@@ -79,11 +74,29 @@ export default function ProjectFolderField({ disabled, initialDeviceId, onChange
       <Button
         disabled={disabled || !canBrowse}
         icon={FolderOpenIcon}
-        title={value?.path}
+        loading={browsing}
         onClick={browse}
       >
-        <Text ellipsis>{value?.path || t('create.chooseFolder')}</Text>
+        {t(selectingLocal ? 'directories.chooseLocal' : 'create.chooseFolder')}
       </Button>
+      {value?.paths.map((path) => (
+        <Flexbox horizontal align="center" gap={8} key={path}>
+          <Text ellipsis style={{ flex: 1, minWidth: 0 }} title={path}>
+            {path}
+          </Text>
+          <ActionIcon
+            disabled={disabled || browsing}
+            icon={XIcon}
+            size="small"
+            title={t('directories.removeSelected', { path })}
+            onClick={() => {
+              const paths = value.paths.filter((item) => item !== path);
+              setChosen(value.deviceId);
+              onChange(paths.length ? { ...value, paths } : undefined);
+            }}
+          />
+        </Flexbox>
+      ))}
       {devices.error ? (
         <AsyncError error={devices.error} variant="inline" onRetry={() => devices.mutate()} />
       ) : devices.isConfirmed && online.length === 0 ? (

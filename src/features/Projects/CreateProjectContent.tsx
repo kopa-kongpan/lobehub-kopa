@@ -123,7 +123,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
     try {
       const project = await createProject({
         ...buildCreateProjectRequest(createInput, { avatar: form.avatar, ids: reservedIds }),
-        ...(folder && { folder }),
+        ...(folder && { folders: folder }),
       });
       // The project created an agent and maybe the Project label; show both.
       const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
@@ -138,7 +138,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
       // still collide after the inline check. The server names the field it
       // rejected, so the error lands on that input instead of a generic toast.
       if (
-        fromFolder &&
+        folder &&
         ['PRECONDITION_FAILED', 'NOT_FOUND'].includes(
           (error as { data?: { code?: string } }).data?.code ?? '',
         )
@@ -173,17 +173,15 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
   return (
     <>
       <Flexbox gap={16} padding={16}>
-        {fromFolder && (
-          <ProjectFolderField
-            disabled={form.loading}
-            value={folder}
-            onChange={(next) => {
-              setFolderError(false);
-              if (next && !nameEdited) updateName(projectFolderName(next.path).slice(0, 255));
-              setFolder(next);
-            }}
-          />
-        )}
+        <ProjectFolderField
+          disabled={form.loading}
+          value={folder}
+          onChange={(next) => {
+            setFolderError(false);
+            if (next && !nameEdited) updateName(projectFolderName(next.paths[0]).slice(0, 255));
+            setFolder(next);
+          }}
+        />
         {folderError && (
           <Text role="alert" type="danger">
             {t('settings.directoryUnavailable')}
@@ -230,7 +228,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
           onSlugChange={(slug) => updateForm({ slug, slugConflict: false, slugEdited: true })}
           onSubmit={handleCreate}
         />
-        {!fromFolder && (
+        {!fromFolder && !folder && (
           <Text fontSize={12} type="secondary">
             {t('create.afterCreateHint')}
           </Text>

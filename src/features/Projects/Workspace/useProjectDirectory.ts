@@ -39,15 +39,19 @@ export const addedFolderTarget = (
 
 /**
  * The project folder a new conversation on a device starts in: the person's
- * pick while it is still on that device, otherwise the device's first one.
+ * pick while it is still on that device, then the agent's configured folder,
+ * then the first available folder.
  * Without one the run works wherever the device starts it.
  */
-export const useProjectDirectory = (projectId: string, deviceId?: string) => {
+export const useProjectDirectory = (projectId: string, deviceId?: string, defaultPath?: string) => {
   useProjectDirectoryStore((s) => s.useFetchDirectories)(projectId);
   const all = useProjectDirectories(projectId);
   const [pickedId, setPickedId] = useState<string>();
   const onDevice = directoriesOnDevice(all, deviceId);
-  const directory = onDevice.find((item) => item.id === pickedId) ?? onDevice[0];
+  const directory =
+    onDevice.find((item) => item.id === pickedId) ??
+    onDevice.find((item) => item.path === defaultPath) ??
+    onDevice[0];
 
   return {
     directory,

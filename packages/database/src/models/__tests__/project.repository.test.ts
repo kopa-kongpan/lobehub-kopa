@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
 import { ProjectRepository } from '../../repositories/project';
+import { ProjectDirectoryRepository } from '../../repositories/projectDirectory';
 import {
   agents,
   devices,
@@ -57,10 +58,20 @@ describe('project creation and its resources', () => {
       userId,
     });
 
-    const project = await repo.create({ folder, name: 'Office' });
-    expect(await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id)).toEqual([
-      expect.objectContaining({ ...folder, runnable: true }),
-    ]);
+    const secondPath = '/Users/test/Sibling';
+    const project = await repo.create({
+      folders: { deviceId: folder.deviceId, paths: [folder.path, secondPath, folder.path] },
+      name: 'Office',
+    });
+    expect(await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id)).toHaveLength(
+      2,
+    );
+    expect(await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ...folder, runnable: true }),
+        expect.objectContaining({ deviceId: folder.deviceId, path: secondPath, runnable: true }),
+      ]),
+    );
     const agent = await serverDB.query.agents.findFirst({
       where: (row, { eq }) => eq(row.id, project.coordinatorAgentId!),
     });
@@ -73,10 +84,25 @@ describe('project creation and its resources', () => {
 
   it('rolls back both the new project and its dedicated agent if binding fails', async () => {
     await expect(
-      repo.create({ name: 'Unbound', folder: { deviceId: 'unknown', path: '/work' } }),
+      repo.create({ name: 'Unbound', folders: { deviceId: 'unknown', paths: ['/work'] } }),
     ).rejects.toThrow('Device not found');
     expect(await model.list()).toEqual([]);
     expect(await serverDB.select().from(agents)).toEqual([]);
+  });
+
+  it('rolls back earlier folders when a later folder cannot be bound to an existing project', async () => {
+    await serverDB
+      .insert(devices)
+      .values({ deviceId: 'batch-mac', identitySource: 'fallback', platform: 'darwin', userId });
+    const project = await createProject(repo, { name: 'Existing project' });
+    const directories = new ProjectDirectoryRepository(serverDB, userId);
+    const base = { deviceId: 'batch-mac', projectId: project.id };
+    await directories.bindFolders({ ...base, paths: ['/work/original'] });
+    await expect(
+      directories.bindFolders({ ...base, paths: ['/work/new', 'relative'] }),
+    ).rejects.toThrow();
+    const after = await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id);
+    expect(after.map(({ path }) => path)).toEqual(['/work/original']);
   });
 
   it('creates a project from a GitHub repository with its environment attached', async () => {

@@ -26,6 +26,7 @@ import {
   assertCanUseTopicTargets,
   assertCanViewTopicTargets,
 } from './_helpers/conversationResourceGuard';
+import { projectFolderSelection, verifyProjectFolders } from './_helpers/projectDirectorySelection';
 import { getResourceConfigAccess } from './_helpers/resourceConfigGuard';
 import { assertCreatorTopicTargets } from './_helpers/shareVisitorTargetGuard';
 
@@ -282,6 +283,24 @@ export const projectWorkingDirectoryRouter = router({
           message: 'Working directory does not exist on this device',
         });
       return { data: await ctx.directoryRepo.bind(input), success: true };
+    }),
+  bindFolders: write
+    .input(
+      projectFolderSelection.extend({
+        projectId: z.string().min(1),
+        environmentId: z.string().uuid().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!(await ctx.projectModel.findManageableById(input.projectId)))
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Project unavailable' });
+      const selection = await verifyProjectFolders(ctx, input);
+      const data = await ctx.directoryRepo.bindFolders({
+        ...selection,
+        projectId: input.projectId,
+        environmentId: input.environmentId,
+      });
+      return { data, success: true };
     }),
   list: procedure
     .input(z.object({ projectId: z.string().optional() }))

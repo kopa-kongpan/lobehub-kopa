@@ -1,4 +1,9 @@
 export default {
+  'directories.chooseLocal': 'Choose folders on this computer',
+  'directories.multiSelectHint': 'Check one or more folders, or open a folder to use it.',
+  'directories.otherDevice': 'Other devices',
+  'directories.removeSelected': 'Remove {{path}} from the selection',
+  'directories.useSelected': 'Use selected folders ({{count}})',
   'directories.currentFolder': 'Current folder',
   'settings.startDirectoryConversation': 'New topic here',
   'settings.editDirectory': 'Edit folder',

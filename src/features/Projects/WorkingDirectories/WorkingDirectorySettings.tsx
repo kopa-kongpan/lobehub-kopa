@@ -1,3 +1,4 @@
+import { isDesktop } from '@lobechat/const';
 import type { DeviceListItem } from '@lobechat/types';
 import {
   ActionIcon,
@@ -11,6 +12,7 @@ import {
   toast,
 } from '@lobehub/ui';
 import { FolderIcon, LinkIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router';
 
@@ -25,6 +27,8 @@ import {
   useProjectEnvironments,
 } from '@/store/projectWorkingDirectory';
 
+import { chooseProjectFolders } from '../projectFolder';
+import { useProjectFolderDevices } from '../useProjectFolderDevices';
 import { openAddDirectoryModal } from './AddDirectoryModal';
 import { openBindDirectoryModal } from './BindDirectoryModal';
 import { openEditDirectoryModal } from './EditDirectoryModal';
@@ -60,6 +64,42 @@ export function WorkingDirectorySettings({ projectId }: { projectId: string }) {
   const error = environmentsRequest.error || directoriesRequest.error || deviceRequest.error;
   const removeDirectory = useProjectDirectoryStore((s) => s.removeDirectory);
   const canManage = project?.permissions?.canManage ?? false;
+  const { localIds, online, preferred } = useProjectFolderDevices();
+  const [adding, setAdding] = useState(false);
+  const bindFolders = useProjectDirectoryStore((s) => s.bindFolders);
+  const selectDevice = () => openAddDirectoryModal(projectId, environmentId || undefined);
+  const local = !!preferred && isDesktop && localIds.includes(preferred.deviceId);
+  const addFolders = async () => {
+    if (adding) return;
+    if (!preferred) {
+      selectDevice();
+      return;
+    }
+    setAdding(true);
+    try {
+      const { deviceId } = preferred;
+      const paths = await chooseProjectFolders({
+        deviceId,
+        local,
+        title: t('create.chooseFolder'),
+      });
+      if (paths.length)
+        await bindFolders({
+          deviceId,
+          environmentId: environmentId || undefined,
+          paths,
+          projectId,
+        });
+    } catch (error) {
+      console.error('Failed to add project folders', error);
+      toast.error({
+        title: t('settings.addDirectoryFailed'),
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setAdding(false);
+    }
+  };
   const remove = (directory: ProjectDirectory) =>
     confirmModal({
       cancelText: t('cancel', { ns: 'common' }),
@@ -98,13 +138,16 @@ export function WorkingDirectorySettings({ projectId }: { projectId: string }) {
           onChange={(id) => setParams(id && id !== '__all__' ? { environment: id } : {})}
         />
         {canManage && (
-          <Button
-            icon={PlusIcon}
-            type="primary"
-            onClick={() => openAddDirectoryModal(projectId, environmentId || undefined)}
-          >
-            {t('settings.addDirectory')}
-          </Button>
+          <Flexbox horizontal gap={8}>
+            {preferred && online.length > 1 && (
+              <Button disabled={adding} onClick={selectDevice}>
+                {t('directories.otherDevice')}
+              </Button>
+            )}
+            <Button icon={PlusIcon} loading={adding} type="primary" onClick={addFolders}>
+              {t(local ? 'directories.chooseLocal' : 'settings.addDirectory')}
+            </Button>
+          </Flexbox>
         )}
       </Flexbox>
       {error ? (

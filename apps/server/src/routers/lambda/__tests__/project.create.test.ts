@@ -271,7 +271,26 @@ describe('project.createFromDirectory', () => {
       userId: 'member',
       workspaceId: undefined,
     });
-    expect(mocks.create).toHaveBeenCalledWith({ folder, name: 'Example', visibility: 'private' });
+    expect(mocks.create).toHaveBeenCalledWith({
+      folders: { deviceId: folder.deviceId, paths: [folder.path] },
+      name: 'Example',
+      visibility: 'private',
+    });
+  });
+
+  it('checks every distinct path and refuses the complete selection when one folder is gone', async () => {
+    mocks.statPath.mockImplementation(async ({ path }: { path: string }) => ({
+      exists: path === '/ok',
+      isDirectory: true,
+    }));
+    await expect(
+      caller().createFromDirectory({
+        folders: { deviceId: 'mac', paths: ['/ok', '/ok/', '/gone'] },
+        name: 'Mixed',
+      }),
+    ).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
+    expect(mocks.statPath).toHaveBeenCalledTimes(2);
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 
   it('does not probe a device that is unavailable to this workspace member', async () => {

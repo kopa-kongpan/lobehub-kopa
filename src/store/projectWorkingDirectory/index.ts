@@ -99,6 +99,8 @@ interface ProjectDirectoryStore extends ProjectDirectoryStoreState {
   ) => Promise<ServiceData<'attachRepository'>>;
   /** Register a working directory, absorbing the conversations it covers. */
   bind: (...args: ServiceParams<'bind'>) => Promise<ServiceData<'bind'>>;
+  /** Attach the device folders from a single picker confirmation together. */
+  bindFolders: (...args: ServiceParams<'bindFolders'>) => Promise<ServiceData<'bindFolders'>>;
   /** Open a project conversation outside any directory binding. */
   createProjectTopic: (
     ...args: ServiceParams<'createProjectTopic'>
@@ -322,6 +324,16 @@ export const useProjectDirectoryStore: UseBoundStoreWithEqualityFn<
         directories.revalidate(ALL_PROJECTS_KEY),
         directories.revalidate(input.projectId),
         environmentTopics.revalidate(),
+        environments.revalidate(),
+        environments.revalidate(input.projectId),
+      ]);
+      return result.data;
+    },
+    bindFolders: async (input) => {
+      const result = await projectWorkingDirectoryService.bindFolders(input);
+      await Promise.all([
+        directories.revalidate(ALL_PROJECTS_KEY),
+        directories.revalidate(input.projectId),
         environments.revalidate(),
         environments.revalidate(input.projectId),
       ]);

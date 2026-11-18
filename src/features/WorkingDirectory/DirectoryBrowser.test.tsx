@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DirectoryBrowser } from './DirectoryBrowser';
@@ -43,6 +43,25 @@ describe('DirectoryBrowser', () => {
 
     expect(screen.getByText('held')).toBeInTheDocument();
     expect(screen.getByText('workingDirectory.useFolder').closest('button')).not.toBeDisabled();
+  });
+
+  it('confirms checked siblings together, leaving unselected folders out', () => {
+    const onSelect = vi.fn();
+    render(
+      <DirectoryBrowser
+        loading={false}
+        multiSelect={{ onSelect, confirmLabel: (count) => `Use ${count}` }}
+        source={sourceWith({
+          entries: ['A', 'B', 'C'].map((name) => ({ name, path: '/' + name })),
+        })}
+        onCancel={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: '/A' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '/C' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use 2' }));
+    expect(onSelect).toHaveBeenCalledWith(['/A', '/C']);
   });
 
   it('should keep what a pick carries along off the footer buttons row', () => {

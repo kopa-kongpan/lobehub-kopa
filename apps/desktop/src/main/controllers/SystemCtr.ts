@@ -330,38 +330,36 @@ export default class SystemController extends ControllerModule {
   @IpcMethod()
   async selectFolder(payload?: {
     defaultPath?: string;
+    multiple?: boolean;
     title?: string;
-  }): Promise<{ path: string; repoType?: 'git' | 'github' } | undefined> {
+  }): Promise<{ path: string; paths?: string[]; repoType?: 'git' | 'github' } | undefined> {
     const mainWindow = this.app.browserManager.getMainWindow()?.browserWindow;
-
     const result = await dialog.showOpenDialog(mainWindow!, {
       defaultPath: payload?.defaultPath,
-      properties: ['openDirectory', 'createDirectory'],
+      properties: payload?.multiple
+        ? ['openDirectory', 'createDirectory', 'multiSelections']
+        : ['openDirectory', 'createDirectory'],
       title: payload?.title || 'Select Folder',
     });
+    if (result.canceled || !result.filePaths.length) return;
 
-    if (result.canceled || result.filePaths.length === 0) {
-      return undefined;
-    }
-
-    const folderPath = result.filePaths[0];
-    const { detectRepoType } = await import('@lobechat/local-file-shell/git');
-    const repoType = await detectRepoType(folderPath);
-
-    try {
-      const approvedRoot = await this.app.localFileProtocolManager.approveWorkspaceRoot(folderPath);
-
-      if (approvedRoot) {
-        const storedRoots = this.app.storeManager.get('localFileWorkspaceRoots', []);
-        if (!storedRoots.includes(approvedRoot)) {
-          this.app.storeManager.set('localFileWorkspaceRoots', [approvedRoot, ...storedRoots]);
+    const paths = payload?.multiple ? [...new Set(result.filePaths)] : [result.filePaths[0]];
+    for (const path of paths) {
+      try {
+        const root = await this.app.localFileProtocolManager.approveWorkspaceRoot(path);
+        if (root) {
+          const stored = this.app.storeManager.get('localFileWorkspaceRoots', []);
+          if (!stored.includes(root))
+            this.app.storeManager.set('localFileWorkspaceRoots', [root, ...stored]);
         }
+      } catch (error) {
+        logger.error(`Failed to approve local file workspace root ${path}:`, error);
       }
-    } catch (error) {
-      logger.error(`Failed to approve local file workspace root ${folderPath}:`, error);
     }
-
-    return { path: folderPath, repoType };
+    const path = paths[0];
+    if (payload?.multiple) return { path, paths };
+    const { detectRepoType } = await import('@lobechat/local-file-shell/git');
+    return { path, repoType: await detectRepoType(path) };
   }
 
   @IpcMethod()
