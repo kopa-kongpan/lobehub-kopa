@@ -622,6 +622,7 @@ export const sharedOptimizeDeps = {
 
 // Workspace packages can resolve @lobehub/editor through different peer-dependency
 // snapshots. They must still share one LexicalComposerContext at runtime.
-export const sharedRendererDedupe = ['@lobehub/editor', 'react', 'react-dom'];
+// Desktop's isolated install also contains older transitive icon packages.
+export const sharedRendererDedupe = ['@lobehub/editor', 'lucide-react', 'react', 'react-dom'];
 
 export const __testing = { isUiCoreModule, sharedChunkFileNames, sharedManualChunks };

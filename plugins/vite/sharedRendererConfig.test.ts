@@ -123,6 +123,10 @@ describe('sharedOptimizeDeps', () => {
 });
 
 describe('sharedRendererDedupe', () => {
+  it('resolves desktop icons against the SPA dependency with the marketplace glyph', () => {
+    expect(sharedRendererDedupe).toContain('lucide-react');
+  });
+
   it('keeps editor entrypoints on one shared context instance', () => {
     expect(sharedRendererDedupe).toContain('@lobehub/editor');
   });
