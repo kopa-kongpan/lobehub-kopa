@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import type { DataSyncConfig } from '@lobechat/electron-client-ipc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -5,14 +9,13 @@ import type { App } from '@/core/App';
 
 import RemoteServerConfigCtr from '../RemoteServerConfigCtr';
 
-const { appSignInMock, ipcMainHandleMock, mockFetch, mockHeadersHook } = vi.hoisted(() => ({
+const { appSignInMock, ipcMainHandleMock, mockFetch } = vi.hoisted(() => ({
   appSignInMock: {
     refreshAppSignIn: vi.fn(async () => {}),
     withdrawAppSignIn: vi.fn(async () => {}),
   },
   ipcMainHandleMock: vi.fn(),
   mockFetch: vi.fn(),
-  mockHeadersHook: vi.fn(),
 }));
 
 vi.mock('@/modules/cliEmbedding/appSignInFile', () => appSignInMock);
@@ -23,7 +26,6 @@ vi.mock('@/utils/net-fetch', () => ({
 
 // Mock electron
 vi.mock('electron', () => ({
-  session: { fromPartition: () => ({ webRequest: { onBeforeSendHeaders: mockHeadersHook } }) },
   app: {
     getVersion: vi.fn(() => '1.2.3'),
   },
@@ -38,7 +40,11 @@ vi.mock('electron', () => ({
 }));
 
 // Mock @/const/env
+const env = vi.hoisted(() => ({ isDev: false }));
 vi.mock('@/const/env', () => ({
+  get isDev() {
+    return env.isDev;
+  },
   OFFICIAL_CLOUD_SERVER: 'https://cloud.lobehub.com',
 }));
 
@@ -221,7 +227,6 @@ describe('RemoteServerConfigCtr', () => {
         storageMode: 'selfHost',
       });
       expect(mockStoreManager.set).toHaveBeenCalledTimes(1);
-      expect(mockStoreManager.delete).toHaveBeenCalledWith('encryptedTokens');
       expect(mockGatewayConnectionSrv.disconnect).toHaveBeenCalledTimes(1);
     });
 
@@ -246,8 +251,7 @@ describe('RemoteServerConfigCtr', () => {
       expect(result).toBe(true);
       expect(mockStoreManager.set).toHaveBeenCalledWith('dataSyncConfig', {
         active: false,
-        remoteServerUrl: 'https://lobe.muyimusic.net',
-        storageMode: 'selfHost',
+        storageMode: 'cloud',
       });
       expect(mockStoreManager.delete).toHaveBeenCalledWith('encryptedTokens');
     });
@@ -581,41 +585,7 @@ describe('RemoteServerConfigCtr', () => {
     });
   });
 
-  it('does not attach a project token to an official subscription webview request', async () => {
-    mockStoreManager.get.mockReturnValue({
-      active: true,
-      remoteServerUrl: 'https://lobe.muyimusic.net',
-      storageMode: 'selfHost',
-    });
-    const getToken = vi.spyOn(controller, 'getAccessToken').mockResolvedValue('project-test-token');
-    await controller.setupSubscriptionWebviewSession({ partition: 'test-subscription' });
-    const callback = vi.fn();
-    await mockHeadersHook.mock.lastCall![1](
-      { requestHeaders: {}, url: 'https://lobehub.com/subscription' },
-      callback,
-    );
-    expect(callback.mock.calls[0][0].requestHeaders).not.toHaveProperty('Oidc-Auth');
-    expect(getToken).not.toHaveBeenCalled();
-  });
-
   describe('refreshAccessToken', () => {
-    it('ignores a late refresh response after credentials were cleared', async () => {
-      mockStoreManager.get.mockImplementation((key) =>
-        key === 'dataSyncConfig' ? { active: true, storageMode: 'cloud' } : null,
-      );
-      await controller.saveTokens('old-access', 'old-refresh');
-      const deferred = Promise.withResolvers<Response>();
-      mockFetch.mockReturnValue(deferred.promise);
-      const pending = controller.refreshAccessToken();
-      await vi.waitFor(() => expect(mockFetch).toHaveBeenCalled());
-      await controller.clearTokens();
-      deferred.resolve(
-        Response.json({ access_token: 'stale-access', refresh_token: 'stale-refresh' }),
-      );
-      expect((await pending).success).toBe(false);
-      expect(await controller.getAccessToken()).toBeNull();
-    });
-
     it('should return error when remote server is not active', async () => {
       mockStoreManager.get.mockImplementation((key) => {
         if (key === 'dataSyncConfig') {
@@ -892,6 +862,61 @@ describe('RemoteServerConfigCtr', () => {
 
       // Verify lastRefreshAt was loaded
       expect(newController.getLastTokenRefreshAt()).toBe(lastRefreshTime);
+    });
+
+    describe('dev login file', () => {
+      let dir: string;
+      let file: string;
+
+      beforeEach(() => {
+        dir = mkdtempSync(path.join(tmpdir(), 'lobe-dev-login-'));
+        file = path.join(dir, 'login.json');
+        writeFileSync(
+          file,
+          JSON.stringify({
+            accessToken: 'dev-access',
+            expiresIn: 3600,
+            remoteServerUrl: 'http://localhost:3010',
+          }),
+        );
+        vi.stubEnv('LOBE_DESKTOP_DEV_REMOTE_LOGIN', file);
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+        env.isDev = false;
+        rmSync(dir, { force: true, recursive: true });
+      });
+
+      it('signs a dev build in to the local server from the launcher file', async () => {
+        env.isDev = true;
+        const stored = new Map<string, unknown>();
+        mockStoreManager.set.mockImplementation((key: string, value: unknown) => {
+          stored.set(key, value);
+        });
+        mockStoreManager.get.mockImplementation((key: string) => stored.get(key));
+
+        const newController = new RemoteServerConfigCtr(mockApp);
+        // Before windows open: the main window must start in the app, not the onboarding.
+        newController.beforeAppReady();
+        expect(stored.get('dataSyncConfig')).toEqual({
+          active: true,
+          remoteServerUrl: 'http://localhost:3010',
+          storageMode: 'selfHost',
+        });
+        expect(stored.get('desktopOnboardingCompleted')).toBe(true);
+
+        newController.afterAppReady();
+        expect(await newController.getAccessToken()).toBe('dev-access');
+      });
+
+      it('ignores the file outside a dev build', () => {
+        const newController = new RemoteServerConfigCtr(mockApp);
+        newController.beforeAppReady();
+        newController.afterAppReady();
+
+        expect(mockStoreManager.set).not.toHaveBeenCalledWith('dataSyncConfig', expect.anything());
+      });
     });
   });
 

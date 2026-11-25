@@ -43,6 +43,7 @@ import { ensureFreshOAuthToken } from '@/server/services/oauthDeviceFlow/refresh
 import { KeyVaultsGateKeeper } from '../KeyVaultsEncrypt';
 import apiKeyManager from './apiKeyManager';
 import { sharpInlineImageNormalizer } from './inlineImageNormalizer';
+import { createUserEndpointGuardedRuntime } from './userEndpointGuard';
 
 // Server requests can re-encode oversized images instead of dropping them.
 setInlineImageNormalizer(sharpInlineImageNormalizer);
@@ -105,14 +106,6 @@ export const buildPayloadFromKeyVaults = (
   // Use runtimeProvider to determine which fields to include
   // This handles both builtin providers and custom providers with sdkType
   switch (runtimeProvider) {
-    case ModelProvider.Anthropic: {
-      return {
-        apiKey: keyVaults.apiKey,
-        authType: keyVaults.authType,
-        baseURL: keyVaults.baseURL,
-        runtimeProvider,
-      };
-    }
     case ModelProvider.Bedrock: {
       const { accessKeyId, apiKey, region, secretAccessKey, sessionToken } = keyVaults;
 
@@ -240,20 +233,6 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
   const runtimeProvider = payload.runtimeProvider ?? provider;
 
   switch (runtimeProvider) {
-    case ModelProvider.Anthropic: {
-      const apiKey = apiKeyManager.pick(payload.apiKey || llmConfig.ANTHROPIC_API_KEY);
-      const baseURL =
-        payload.baseURL || (useServerConfig ? process.env.ANTHROPIC_PROXY_URL : undefined);
-      return {
-        apiKey,
-        baseURL,
-        ...(payload.authType === 'bearer' && apiKey
-          ? {
-              defaultHeaders: { 'Authorization': `Bearer ${apiKey}`, 'x-api-key': null },
-            }
-          : {}),
-      };
-    }
     case ModelProvider.LobeHub: {
       return { apikey: payload.apiKey, baseURL: payload.baseURL, ...payload };
     }
@@ -469,6 +448,14 @@ const buildVertexOptions = (
     (useServerConfig ? process.env.VERTEXAI_LOCATION : undefined) ||
     undefined;
 
+  // The region is interpolated into `<region>-aiplatform.googleapis.com` by the
+  // SDK; reject anything that could change the resulting host.
+  if (location && !/^[a-z0-9-]+$/.test(location)) {
+    throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidVertexCredentials, {
+      message: 'Invalid VertexAI region',
+    });
+  }
+
   const googleAuthOptions = params.googleAuthOptions || (credentials ? { credentials } : undefined);
 
   // Without explicit user credentials Google auth would load the server's ambient credentials.
@@ -514,25 +501,32 @@ export const initModelRuntimeWithUserPayload = (
     });
   }
 
-  if (runtimeProvider === ModelProvider.VertexAI) {
-    const vertexOptions = buildVertexOptions(
-      payload,
-      params,
-      canUseServerProviderConfig(provider, payload),
-    );
-    const runtime = LobeVertexAI.initFromVertexAI(vertexOptions);
+  /**
+   * Endpoints in the payload are user-supplied (keyVaults or the client), so
+   * requests to them are SSRF-guarded. Env-configured `*_PROXY_URL` endpoints
+   * are operator-trusted and stay unguarded. The LobeHub provider is
+   * platform-owned and routes through server config only.
+   */
+  const userEndpoints =
+    runtimeProvider === ModelProvider.LobeHub
+      ? []
+      : [payload.baseURL, payload.cloudflareBaseURLOrAccountID];
 
-    return new ModelRuntime(runtime, hooks);
-  }
+  const runtime = createUserEndpointGuardedRuntime({
+    create: () =>
+      runtimeProvider === ModelProvider.VertexAI
+        ? LobeVertexAI.initFromVertexAI(
+            buildVertexOptions(payload, params, canUseServerProviderConfig(provider, payload)),
+          )
+        : ModelRuntime.createProviderRuntime(runtimeProvider, {
+            ...getParamsFromPayload(provider, payload),
+            ...params,
+          }),
+    endpoints: userEndpoints,
+    provider,
+  });
 
-  return ModelRuntime.initializeWithProvider(
-    runtimeProvider,
-    {
-      ...getParamsFromPayload(provider, payload),
-      ...params,
-    },
-    hooks,
-  );
+  return new ModelRuntime(runtime, hooks);
 };
 
 /**

@@ -18,7 +18,6 @@ import { electronSyncSelectors } from '@/store/electron/selectors';
 const ERROR_MESSAGE_KEYS = {
   auth_failed: 'gateway.error.authRejected',
   config_unavailable: 'gateway.error.configUnavailable',
-  gateway_not_configured: 'gateway.error.notConfigured',
   invalid_gateway_url: 'gateway.error.invalidAddress',
   not_signed_in: 'gateway.error.notSignedIn',
 } as const satisfies Record<GatewayConnectionErrorCode, string>;
@@ -70,10 +69,12 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
 }));
 
 interface DeviceGatewayProps {
+  /** Keeps the status subscriptions running while a page claims the corner for its own actions. */
+  hidden?: boolean;
   workspaceScoped: boolean;
 }
 
-const DeviceGateway = memo<DeviceGatewayProps>(({ workspaceScoped }) => {
+const DeviceGateway = memo<DeviceGatewayProps>(({ hidden, workspaceScoped }) => {
   const { t } = useTranslation('electron');
   const navigate = useWorkspaceAwareNavigate();
   const [
@@ -178,18 +179,18 @@ const DeviceGateway = memo<DeviceGatewayProps>(({ workspaceScoped }) => {
             {t(ERROR_MESSAGE_KEYS[failure.code])}
           </span>
           <Flexbox horizontal gap={4}>
-            {failure.code !== 'not_signed_in' &&
-              failure.code !== 'gateway_not_configured' &&
-              failure.code !== 'invalid_gateway_url' && (
-                <Button outdent size="small" type="text" onClick={() => void connectGateway()}>
-                  {t('gateway.retry')}
-                </Button>
-              )}
+            {failure.code !== 'not_signed_in' && failure.code !== 'invalid_gateway_url' && (
+              <Button outdent size="small" type="text" onClick={() => void connectGateway()}>
+                {t('gateway.retry')}
+              </Button>
+            )}
           </Flexbox>
         </Flexbox>
       )}
     </Flexbox>
   );
+
+  if (hidden) return null;
 
   return (
     <Popover
@@ -219,13 +220,13 @@ const DeviceGateway = memo<DeviceGatewayProps>(({ workspaceScoped }) => {
   );
 });
 
-const DeviceGatewayWithAuth = memo(() => {
+const DeviceGatewayWithAuth = memo<{ hidden?: boolean }>(({ hidden }) => {
   const isSyncActive = useElectronStore(electronSyncSelectors.isSyncActive);
   const activeWorkspaceSlug = useActiveWorkspaceSlug();
 
   if (!isSyncActive) return null;
 
-  return <DeviceGateway workspaceScoped={!!activeWorkspaceSlug} />;
+  return <DeviceGateway hidden={hidden} workspaceScoped={!!activeWorkspaceSlug} />;
 });
 
 export default DeviceGatewayWithAuth;

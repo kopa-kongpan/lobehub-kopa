@@ -10,19 +10,24 @@ export const DEFAULT_DESKTOP_HOTKEY_CONFIG: DesktopHotkeyConfig =
     return acc;
   }, {} as DesktopHotkeyConfig);
 
-export const isValidDesktopServerUrl = (value?: string): value is string => {
-  const url = value && URL.parse(value);
-  return !!url && (url.protocol === 'https:' || url.protocol === 'http:');
-};
+/** OIDC client the LobeHub desktop app signs in with. */
+export const LOBEHUB_DESKTOP_CLIENT_ID = 'lobehub-desktop';
 
-/** A new installation uses the project's server. Keep explicitly configured self-hosts on upgrade. */
-export const getDesktopSignInTarget = (config?: {
-  remoteServerUrl?: string;
-  storageMode: string;
-}) => ({
-  remoteServerUrl:
-    config?.storageMode === 'selfHost' && isValidDesktopServerUrl(config.remoteServerUrl)
-      ? config.remoteServerUrl.trim()
-      : 'https://lobe.muyimusic.net',
-  storageMode: 'selfHost' as const,
-});
+/**
+ * OIDC client Lobot signs in with. Lobot is a separate desktop app, so it gets
+ * its own client instead of borrowing LobeHub Desktop's: its grants, sessions
+ * and token usage stay apart and either app can be revoked on its own.
+ */
+export const LOBOT_DESKTOP_CLIENT_ID = 'lobot-desktop';
+
+/** OIDC client the Lobot iOS app signs in with, through an HTTPS universal-link callback. */
+export const LOBOT_MOBILE_CLIENT_ID = 'lobot-mobile';
+
+/** Desktop apps that sign in through the `/oidc/callback/desktop` handoff. */
+export const DESKTOP_OIDC_CLIENT_IDS: readonly string[] = [
+  LOBEHUB_DESKTOP_CLIENT_ID,
+  LOBOT_DESKTOP_CLIENT_ID,
+];
+
+export const isDesktopOidcClient = (clientId?: string | null): boolean =>
+  !!clientId && DESKTOP_OIDC_CLIENT_IDS.includes(clientId);

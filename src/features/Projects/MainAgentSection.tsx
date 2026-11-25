@@ -1,83 +1,108 @@
 import { createProjectCoordinatorAgentConfig } from '@lobechat/builtin-agents';
-import { Block, Flexbox, Icon, Tag, Text } from '@lobehub/ui';
-import { ChevronDownIcon } from 'lucide-react';
+import { Flexbox, Segmented, Tag, Text } from '@lobehub/ui';
+import { cssVar } from '@lobehub/ui/stylex/cssVar.stylex';
+import * as stylex from '@stylexjs/stylex';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AgentAvatar from '@/components/AgentAvatar';
-import AssigneeAgentSelector from '@/features/AgentTasks/features/AssigneeAgentSelector';
-import { useAgentDisplayMeta } from '@/features/AgentTasks/shared/useAgentDisplayMeta';
+
+import type { MainAgentMode } from './createProjectForm';
+import MainAgentField from './MainAgentField';
+
+const styles = stylex.create({
+  preview: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+    height: 36,
+    paddingInline: '8px',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: cssVar.colorBorder,
+    borderRadius: cssVar.borderRadius,
+  },
+});
 
 interface MainAgentSectionProps {
-  coordinatorAgentId: string | null;
-  /** Id reserved for the dedicated agent and used to seed its avatar. */
+  agentId?: string;
+  /** Id reserved for the dedicated agent: seeds the character it keeps after creation. */
   dedicatedAgentId: string;
-  disabled: boolean;
-  onChange: (agentId: string | null) => void;
+  disabled?: boolean;
+  mode: MainAgentMode;
+  onAgentChange: (agentId: string) => void;
+  onModeChange: (mode: MainAgentMode) => void;
+  /** The project's avatar and name, which a dedicated agent takes over. */
   projectAvatar?: string;
   projectName: string;
 }
 
-const MainAgentSection = ({
-  coordinatorAgentId,
-  dedicatedAgentId,
-  disabled,
-  onChange,
-  projectAvatar,
-  projectName,
-}: MainAgentSectionProps) => {
-  const { t } = useTranslation('project');
-  const selected = useAgentDisplayMeta(coordinatorAgentId);
-  const name = projectName.trim();
-  const createLabel = t('create.mainAgentDedicatedPlaceholder');
-  const newTitle = name ? createProjectCoordinatorAgentConfig({ name }).title : createLabel;
-  const title = selected?.title ?? newTitle;
+/**
+ * Lead the project with an agent the workspace already has (the default,
+ * listed first), or with one created for it. The dedicated agent does not exist until the project is
+ * created, so its row previews the agent the server will create.
+ */
+const MainAgentSection = memo<MainAgentSectionProps>(
+  ({
+    agentId,
+    dedicatedAgentId,
+    disabled,
+    mode,
+    onAgentChange,
+    onModeChange,
+    projectAvatar,
+    projectName,
+  }) => {
+    const { t } = useTranslation('project');
+    const name = projectName.trim();
+    const dedicatedTitle = name ? createProjectCoordinatorAgentConfig({ name }).title : undefined;
 
-  return (
-    <Flexbox gap={6}>
-      <Text fontSize={13} weight={500}>
-        {t('create.mainAgentLabel')}
-      </Text>
-      <AssigneeAgentSelector
-        block
-        currentAgentId={coordinatorAgentId}
-        disabled={disabled}
-        emptySelectionLabel={createLabel}
-        triggerLabel={`${t('create.mainAgentLabel')} · ${title}`}
-        onChange={onChange}
-      >
-        <Block
-          clickable
-          horizontal
-          align="center"
-          flex={1}
-          gap={8}
-          height={36}
-          paddingInline={8}
-          style={{ minWidth: 0 }}
-          variant="outlined"
-        >
-          <AgentAvatar
-            agentId={coordinatorAgentId ?? dedicatedAgentId}
-            avatar={coordinatorAgentId ? selected?.avatar : projectAvatar}
-            name={title}
-            size={22}
-          />
-          <Text ellipsis style={{ flex: 1, minWidth: 0, textAlign: 'start' }} title={title}>
-            {title}
-          </Text>
-          {!coordinatorAgentId && name && (
-            <Tag size="small">{t('create.mainAgentDedicatedTag')}</Tag>
-          )}
-          <Icon icon={ChevronDownIcon} size={16} />
-        </Block>
-      </AssigneeAgentSelector>
-      {!coordinatorAgentId && (
-        <Text fontSize={12} type="secondary">
-          {t('create.mainAgentDedicatedDescription')}
+    return (
+      <Flexbox gap={6}>
+        <Text fontSize={13} weight={500}>
+          {t('create.mainAgentLabel')}
         </Text>
-      )}
-    </Flexbox>
-  );
-};
+        <Segmented
+          block
+          disabled={disabled}
+          value={mode}
+          options={[
+            { label: t('create.mainAgentMode.existing'), value: 'existing' },
+            { label: t('create.mainAgentMode.dedicated'), value: 'dedicated' },
+          ]}
+          onChange={(value) => onModeChange(value as MainAgentMode)}
+        />
+        {mode === 'dedicated' ? (
+          <div {...stylex.props(styles.preview)}>
+            {/* Without a project avatar the agent draws the generated character
+                its reserved id seeds, the one it keeps after creation. */}
+            <AgentAvatar
+              agentId={dedicatedAgentId}
+              avatar={projectAvatar}
+              name={dedicatedTitle}
+              size={22}
+              title={dedicatedTitle}
+            />
+            <Text ellipsis style={{ flex: 1 }} type={dedicatedTitle ? undefined : 'secondary'}>
+              {dedicatedTitle ?? t('create.mainAgentDedicatedPlaceholder')}
+            </Text>
+            <Tag size={'small'}>{t('create.mainAgentDedicatedTag')}</Tag>
+          </div>
+        ) : (
+          <MainAgentField agentId={agentId} disabled={disabled} onChange={onAgentChange} />
+        )}
+        <Text fontSize={12} type="secondary">
+          {t(
+            mode === 'dedicated'
+              ? 'create.mainAgentDedicatedDescription'
+              : 'create.mainAgentDescription',
+          )}
+        </Text>
+      </Flexbox>
+    );
+  },
+);
+
+MainAgentSection.displayName = 'MainAgentSection';
 
 export default MainAgentSection;

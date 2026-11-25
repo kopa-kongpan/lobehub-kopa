@@ -1,7 +1,6 @@
 /**
  * Application settings storage related constants
  */
-import { getDesktopSignInTarget } from '@lobechat/const/desktop';
 import { DEFAULT_ELECTRON_DESKTOP_SHORTCUTS } from '@lobechat/const/desktopGlobalShortcuts';
 import type { NetworkProxySettings } from '@lobechat/electron-client-ipc';
 
@@ -28,7 +27,7 @@ export const defaultProxySettings: NetworkProxySettings = {
  */
 export const STORE_DEFAULTS: ElectronMainStore = {
   appTrayVisible: true,
-  dataSyncConfig: getDesktopSignInTarget(),
+  dataSyncConfig: { storageMode: 'cloud' },
   debugLoggingEnabled: false,
   encryptedTokens: {},
   gatewayDeviceId: '',

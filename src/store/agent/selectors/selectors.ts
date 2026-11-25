@@ -3,6 +3,7 @@ import {
   DEFAULT_AGENT_CONFIG,
   DEFAULT_BACKGROUND_COLOR,
   DEFAULT_INBOX_AVATAR,
+  DEFAULT_INBOX_TITLE,
   DEFAULT_MODEL,
   DEFAUTT_AGENT_TTS_CONFIG,
   isDesktop,
@@ -12,7 +13,6 @@ import {
   type AgentMode,
   type AgentProfile,
   getActivePluginIds,
-  getDisabledPluginIds,
   getWorkingDirEffectivePath,
   type KnowledgeItem,
   KnowledgeType,
@@ -29,7 +29,6 @@ import { filterToolIds } from '@/helpers/toolFilters';
 
 import { type AgentStoreState } from '../initialState';
 import { builtinAgentSelectors } from './builtinAgentSelectors';
-import { getDesktopInboxConfig } from './desktopInboxConfig';
 
 // ==========   Meta   ============== //
 
@@ -66,6 +65,10 @@ const currentAgentAuthorId = (s: AgentStoreState) => currentAgentData(s)?.userId
 const currentAgentCreatedAt = (s: AgentStoreState) => currentAgentData(s)?.createdAt;
 
 const currentAgentVisibility = (s: AgentStoreState) => currentAgentData(s)?.visibility;
+
+/** An agent's visibility by id — for a conversation whose agent is not the active one. */
+const getAgentVisibilityById = (agentId: string) => (s: AgentStoreState) =>
+  s.agentMap[agentId]?.visibility;
 
 /**
  * Get complete meta data for the current agent
@@ -106,6 +109,20 @@ const getAgentMetaById =
   };
 
 /**
+ * The inbox agent's label: the name the user gave it, else its title, else `DEFAULT_INBOX_TITLE`.
+ * Use it wherever the inbox is named, rather than the brand constant.
+ */
+const inboxAgentDisplayName = (s: AgentStoreState) =>
+  agentDisplayName(
+    getAgentMetaById(builtinAgentSelectors.inboxAgentId(s) ?? '')(s),
+    DEFAULT_INBOX_TITLE,
+  );
+
+/** The inbox agent's avatar, else `DEFAULT_INBOX_AVATAR`. */
+const inboxAgentAvatar = (s: AgentStoreState) =>
+  getAgentMetaById(builtinAgentSelectors.inboxAgentId(s) ?? '')(s).avatar || DEFAULT_INBOX_AVATAR;
+
+/**
  * Full-body artwork of the agent's character, or `undefined` when it has none.
  * Kept out of {@link getAgentMetaById} because `MetaData` is shared with
  * sessions and groups, which have no character sheet.
@@ -134,16 +151,16 @@ const getAgentFullBodyArtworkById =
 
 const inboxAgentConfig = (s: AgentStoreState) => {
   const id = builtinAgentSelectors.inboxAgentId(s);
-  // The server has already merged account defaults. Apply only this client's
-  // desktop runtime default, keeping the shared row intact.
-  return id ? getDesktopInboxConfig(id, s) : DEFAULT_AGENT_CONFIG;
+  // Server returns inbox config already merged with DEFAULT_AGENT_CONFIG and serverDefaultAgentConfig,
+  // so we can directly use it. Fallback to DEFAULT_AGENT_CONFIG if not initialized yet.
+  return id ? (s.agentMap[id] as LobeAgentConfig) : DEFAULT_AGENT_CONFIG;
 };
 const inboxAgentModel = (s: AgentStoreState) => inboxAgentConfig(s).model;
 
 const getAgentConfigById =
   (agentId: string) =>
   (s: AgentStoreState): LobeAgentConfig =>
-    getDesktopInboxConfig(agentId, s);
+    s.agentMap[agentId] as LobeAgentConfig;
 
 export const currentAgentConfig = (s: AgentStoreState): LobeAgentConfig =>
   getAgentConfigById(s.activeAgentId || '')(s);
@@ -174,19 +191,6 @@ const currentAgentPlugins = (s: AgentStoreState) => {
   const config = currentAgentConfig(s);
 
   return getActivePluginIds(config?.plugins);
-};
-
-/**
- * Disabled plugin identifiers for the current agent. Consumers that build a
- * tool/skill candidate pool (not just the "always whitelisted" rule map)
- * need this to actually drop a disabled entry from the pool — being absent
- * from `currentAgentPlugins` alone doesn't stop it from being present (and
- * explicit-activation-eligible) in an unfiltered manifest source.
- */
-const currentAgentDisabledPlugins = (s: AgentStoreState) => {
-  const config = currentAgentConfig(s);
-
-  return getDisabledPluginIds(config?.plugins);
 };
 
 /**
@@ -383,6 +387,8 @@ const isAgentSlugConfirmed = (slug?: string | null) => (s: AgentStoreState) =>
 const heteroServerDefaultCapability = (s: AgentStoreState) => s.heteroServerDefaultCapability;
 
 export const agentSelectors = {
+  inboxAgentAvatar,
+  inboxAgentDisplayName,
   currentAgentExecutionTarget,
   currentAgentHeterogeneousProviderType,
   currentAgentAuthorId,
@@ -397,7 +403,6 @@ export const agentSelectors = {
   currentAgentRuntimeEnvConfig,
   currentAgentMeta,
   currentAgentMode,
-  currentAgentDisabledPlugins,
   currentAgentModel,
   currentAgentModelProvider,
   currentAgentPlugins,
@@ -408,6 +413,7 @@ export const agentSelectors = {
   currentAgentDisplayName,
   currentAgentTitle,
   currentAgentVisibility,
+  getAgentVisibilityById,
   currentAgentWorkingDirectory,
   currentEnabledKnowledge,
   currentKnowledgeIds,

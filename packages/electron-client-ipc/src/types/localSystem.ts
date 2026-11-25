@@ -771,13 +771,8 @@ export type ProjectSkillSource = '.agents/skills' | '.claude/skills' | '.codex/s
 
 export interface ProjectSkillItem {
   description?: string;
-  /** Total number of regular files under `skillDir` (recursive, including `SKILL.md`). */
-  fileCount: number;
-  /**
-   * Relative paths (within `skillDir`) of all regular files under the skill,
-   * sorted lexicographically and capped to a safe maximum. Includes `SKILL.md`.
-   */
-  files: string[];
+  /** SKILL.md declares that the model must not invoke this skill automatically. */
+  disableModelInvocation?: boolean;
   name: string;
   /** Absolute path to the SKILL.md file. */
   path: string;

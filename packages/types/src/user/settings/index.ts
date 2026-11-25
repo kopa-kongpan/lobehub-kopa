@@ -39,7 +39,7 @@ export interface UserSettings {
   image: UserImageConfig;
   keyVaults: UserKeyVaults;
   languageModel: UserModelProviderConfig;
-  market?: MarketAuthTokens | null;
+  market?: MarketAuthTokens;
   memory?: UserMemorySettings;
   notification?: NotificationSettings;
   systemAgent: UserServiceModelConfig & { tiers?: ServiceModelTierConfig };

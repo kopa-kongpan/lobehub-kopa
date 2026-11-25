@@ -1,13 +1,18 @@
-import { Button, Flexbox, Input, ModalFooter, Text, toast, useModalContext } from '@lobehub/ui';
+import { Button, Flexbox, Input, ModalFooter, Text, useModalContext } from '@lobehub/ui';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import InlineErrorText from '@/components/InlineErrorText';
+import { type InlineErrorState, toInlineError } from '@/components/InlineErrorText/errorDetail';
 import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
+import { useAgentStore } from '@/store/agent';
+import { builtinAgentSelectors } from '@/store/agent/selectors';
 import { useHomeStore } from '@/store/home';
 import { type ProjectListItem, useLoadedProjectList, useProjectStore } from '@/store/project';
 
 import {
   buildCreateProjectRequest,
+  DEFAULT_MAIN_AGENT_MODE,
   doesConflictApplyTo,
   getCreateProjectInput,
   getProjectConflictField,
@@ -15,6 +20,7 @@ import {
   isProjectIdentifierTaken,
   isProjectIdentifierValid,
   isProjectSlugValid,
+  type MainAgentMode,
   reserveProjectIds,
 } from './createProjectForm';
 import CreateProjectMoreFields from './CreateProjectMoreFields';
@@ -34,7 +40,7 @@ export interface CreateProjectOptions {
 }
 
 interface CreateProjectFormState {
-  /** Emoji or uploaded image URL; the dedicated main agent takes it over too. */
+  /** Emoji or uploaded image URL; a dedicated main agent takes it over too. */
   avatar?: string;
   /** Creating now would save the project, and its agent, without the avatar on its way. */
   avatarUploading: boolean;
@@ -42,6 +48,9 @@ interface CreateProjectFormState {
   /** Set when the server rejects the identifier as already taken. */
   identifierConflict: boolean;
   loading: boolean;
+  /** Explicit pick in this modal; otherwise LobeAI. */
+  mainAgentId?: string;
+  mainAgentMode: MainAgentMode;
   name: string;
   slug: string;
   /** Set when the server rejects the slug as already taken in this scope. */
@@ -66,6 +75,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
     identifier: '',
     identifierConflict: false,
     loading: false,
+    mainAgentMode: DEFAULT_MAIN_AGENT_MODE,
     name: '',
     slug: '',
     slugConflict: false,
@@ -73,7 +83,10 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
   });
   // Taken once per open modal: both generated avatars are seeded by these ids.
   const [reservedIds] = useState(reserveProjectIds);
-  const [coordinatorAgentId, setCoordinatorAgentId] = useState<string | null>(null);
+  /** Create failure that no field explains, shown above the footer buttons: the modal stays open with the user's input. */
+  const [error, setError] = useState<InlineErrorState | null>(null);
+  const inboxAgentId = useAgentStore(builtinAgentSelectors.inboxAgentId);
+  const mainAgentId = form.mainAgentId ?? inboxAgentId;
   const [folder, setFolder] = useState<ProjectFolderSelection>();
   const [nameEdited, setNameEdited] = useState(false);
   const [folderError, setFolderError] = useState(false);
@@ -119,26 +132,29 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
       return;
     const submittedIdentifier = createInput.identifier ?? '';
     const submittedSlug = createInput.slug ?? '';
+    setError(null);
     setFolderError(false);
     updateForm({ loading: true });
     try {
       const project = await createProject({
         ...buildCreateProjectRequest(createInput, {
           avatar: form.avatar,
-          coordinatorAgentId,
           ids: reservedIds,
+          mainAgentId,
+          mainAgentMode: form.mainAgentMode,
         }),
         ...(folder && { folders: folder }),
       });
-      if (!coordinatorAgentId) {
+      if (form.mainAgentMode === 'dedicated') {
+        // The project created an agent and maybe the Project label; show both.
         const { refreshAgentLabels, refreshAgentList } = useHomeStore.getState();
         void Promise.all([refreshAgentList(), refreshAgentLabels()]);
       }
       close();
       if (onCreated) onCreated(project);
       else navigate(`/project/${project.slug ?? project.id}`);
-    } catch (error) {
-      console.error('Failed to create project', error);
+    } catch (err) {
+      console.error('Failed to create project', err);
       // The unique index stays the final authority: a concurrent create, or a
       // private project by another member that the loaded list cannot see, can
       // still collide after the inline check. The server names the field it
@@ -146,13 +162,13 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
       if (
         folder &&
         ['PRECONDITION_FAILED', 'NOT_FOUND'].includes(
-          (error as { data?: { code?: string } }).data?.code ?? '',
+          (err as { data?: { code?: string } }).data?.code ?? '',
         )
       ) {
         setFolderError(true);
         return;
       }
-      const conflict = getProjectConflictField(error);
+      const conflict = getProjectConflictField(err);
       if (conflict === 'identifier') {
         setForm((current) => ({
           ...current,
@@ -170,7 +186,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
         }));
         return;
       }
-      toast.error(t('operationFailed', { ns: 'common' }));
+      setError(toInlineError(t('create.failedRetry'), err));
     } finally {
       updateForm({ loading: false });
     }
@@ -214,17 +230,20 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
               onChange={(event) => {
                 setNameEdited(!!event.target.value);
                 updateName(event.target.value);
+                setError(null);
               }}
             />
           </ProjectAvatarField>
         </Flexbox>
         <MainAgentSection
-          coordinatorAgentId={coordinatorAgentId}
+          agentId={mainAgentId}
           dedicatedAgentId={reservedIds.agentId}
           disabled={form.loading}
+          mode={form.mainAgentMode}
           projectAvatar={form.avatar}
           projectName={form.name}
-          onChange={setCoordinatorAgentId}
+          onAgentChange={(id) => updateForm({ mainAgentId: id })}
+          onModeChange={(mainAgentMode) => updateForm({ mainAgentMode })}
         />
         <CreateProjectMoreFields
           identifier={form.identifier}
@@ -242,6 +261,7 @@ const CreateProjectContent = memo<CreateProjectOptions>(({ fromFolder, onCreated
             {t('create.afterCreateHint')}
           </Text>
         )}
+        {error && <InlineErrorText detail={error.detail}>{error.summary}</InlineErrorText>}
       </Flexbox>
       <ModalFooter>
         <Button onClick={close}>{t('cancel', { ns: 'common' })}</Button>

@@ -32,12 +32,6 @@ const log = debug('lambda-router:market');
 
 const marketSourceSchema = z.enum(['legacy', 'new']);
 
-// Public template import must never gain access from a user's Market identity.
-// In particular, ignore both cookie/DB tokens and trusted-client credentials.
-const publicAgentProcedure = publicProcedure.use(({ next }) =>
-  next({ ctx: { publicDiscoverService: new DiscoverService() } }),
-);
-
 // Public procedure with optional user info for trusted client token
 const marketProcedure = publicProcedure
   .use(serverDatabase)
@@ -97,23 +91,6 @@ export const marketRouter = router({
     }),
 
   // ============================== Assistant Market ==============================
-  getPublicAssistantDetail: publicAgentProcedure
-    .input(
-      z.object({
-        identifier: z.string(),
-        locale: z.string().optional(),
-        source: marketSourceSchema.optional(),
-        version: z.string().optional(),
-      }),
-    )
-    .query(async ({ input, ctx }) => {
-      try {
-        return await ctx.publicDiscoverService.getAssistantDetail(input);
-      } catch (error) {
-        throw mapMarketError(error, 'Failed to fetch public assistant detail');
-      }
-    }),
-
   getAssistantCategories: marketProcedure
     .input(
       z

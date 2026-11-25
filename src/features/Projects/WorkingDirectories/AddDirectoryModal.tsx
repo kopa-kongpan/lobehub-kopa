@@ -1,4 +1,4 @@
-import { Alert, Button, createModal, Flexbox, Select, Text, useModalContext } from '@lobehub/ui';
+import { Alert, Button, createModal, Flexbox, useModalContext } from '@lobehub/ui';
 import { t } from 'i18next';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,21 +28,22 @@ function AddDirectoryContent({
   const { t } = useTranslation('project');
   const environmentsRequest = useProjectDirectoryStore((s) => s.useFetchEnvironments)(projectId);
   const environments = useProjectEnvironments(projectId);
-  const [environmentId, setEnvironment] = useState(initialEnvironmentId ?? '');
+  // A project has one environment, made with it: nothing to choose.
+  const environmentId = initialEnvironmentId ?? environments[0]?.id ?? '';
   const [folder, setFolder] = useState<ProjectFolderSelection>();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>();
   const bindFolders = useProjectDirectoryStore((s) => s.bindFolders);
   const { close } = useModalContext();
   const save = async () => {
-    if (!folder || pending) return;
+    if (!environmentId || !folder || pending) return;
     const { deviceId, paths } = folder;
     setPending(true);
     setError(undefined);
     try {
       const [added] = await bindFolders({
         projectId,
-        environmentId: environmentId || undefined,
+        environmentId,
         deviceId,
         paths,
       });
@@ -67,25 +68,6 @@ function AddDirectoryContent({
           setError(undefined);
         }}
       />
-      {environments.length > 0 && (
-        <>
-          <Text>{t('directories.environment')}</Text>
-          <Select
-            aria-label={t('directories.environment')}
-            disabled={pending}
-            placeholder={t('directories.environment')}
-            value={environmentId}
-            options={[
-              { value: '', label: t('create.automaticEnvironment') },
-              ...environments.map((env) => ({ value: env.id, label: env.name })),
-            ]}
-            onChange={(id) => {
-              setEnvironment(id ?? '');
-              setError(undefined);
-            }}
-          />
-        </>
-      )}
       {error ? (
         <Alert
           showIcon
@@ -104,7 +86,12 @@ function AddDirectoryContent({
         <Button disabled={pending} onClick={close}>
           {t('cancel', { ns: 'common' })}
         </Button>
-        <Button disabled={!folder} loading={pending} type="primary" onClick={save}>
+        <Button
+          disabled={!environmentId || !folder}
+          loading={pending}
+          type="primary"
+          onClick={save}
+        >
           {t('settings.addDirectory')}
         </Button>
       </Flexbox>
@@ -117,7 +104,9 @@ export const openAddDirectoryModal = (
   options: AddDirectoryOptions = {},
 ) =>
   createModal({
-    title: t('settings.addDirectory', { ns: 'project' }),
+    title: t(options.deviceId ? 'settings.setDeviceDirectory' : 'settings.addDirectory', {
+      ns: 'project',
+    }),
     content: (
       <AddDirectoryContent {...options} environmentId={environmentId} projectId={projectId} />
     ),

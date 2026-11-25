@@ -1,12 +1,11 @@
+import { readFileSync } from 'node:fs';
 import querystring from 'node:querystring';
 import { URL } from 'node:url';
 
-import { getDesktopSignInTarget, isValidDesktopServerUrl } from '@lobechat/const/desktop';
-import { isOfficialCloudServer } from '@lobechat/const/url';
 import type { DataSyncConfig, DesktopBootstrapIdentity } from '@lobechat/electron-client-ipc';
 import { safeStorage, session as electronSession } from 'electron';
 
-import { OFFICIAL_CLOUD_SERVER } from '@/const/env';
+import { isDev, OFFICIAL_CLOUD_SERVER } from '@/const/env';
 import { refreshAppSignIn, withdrawAppSignIn } from '@/modules/cliEmbedding/appSignInFile';
 import GatewayConnectionService from '@/services/gatewayConnectionSrv';
 import { appendVercelCookie } from '@/utils/http-headers';
@@ -99,9 +98,23 @@ export default class RemoteServerConfigCtr extends ControllerModule {
     const isActive = Boolean(effectiveConfig.active);
     const isSelfHostConfigured =
       effectiveConfig.storageMode !== 'selfHost' ||
-      isValidDesktopServerUrl(effectiveConfig.remoteServerUrl);
+      this.isValidSelfHostRemoteUrl(effectiveConfig.remoteServerUrl);
 
     return isActive && isSelfHostConfigured;
+  }
+
+  private isValidSelfHostRemoteUrl(remoteServerUrl?: string): boolean {
+    if (!remoteServerUrl) return false;
+    const normalizedUrl = remoteServerUrl.trim();
+
+    if (!normalizedUrl) return false;
+
+    try {
+      const parsedUrl = new URL(normalizedUrl);
+      return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -117,6 +130,7 @@ export default class RemoteServerConfigCtr extends ControllerModule {
 
     // Save configuration with legacy local storage fallback
     const merged = this.normalizeConfig({ ...prev, ...config });
+    storeManager.set('dataSyncConfig', merged);
 
     // The device gateway connection belongs to the login it was opened for.
     // Pointing at another server, or deactivating this one, ends that login:
@@ -125,13 +139,10 @@ export default class RemoteServerConfigCtr extends ControllerModule {
       this.getRemoteServerUrl(prev),
       this.getRemoteServerUrl(merged),
     ]);
-    if (prevServerUrl !== nextServerUrl) {
-      await this.clearTokens();
-    } else if (prev.active && !merged.active) {
+    if (prevServerUrl !== nextServerUrl || (prev.active && !merged.active)) {
       await this.app.getService(GatewayConnectionService)?.disconnect();
     }
 
-    storeManager.set('dataSyncConfig', merged);
     this.broadcastRemoteServerConfigUpdated();
 
     return true;
@@ -145,8 +156,11 @@ export default class RemoteServerConfigCtr extends ControllerModule {
     logger.info('Clearing remote server configuration');
     const { storeManager } = this.app;
 
+    // Clear instance configuration
+    storeManager.set('dataSyncConfig', { active: false, storageMode: 'cloud' });
+
+    // Clear tokens (if any)
     await this.clearTokens();
-    storeManager.set('dataSyncConfig', { ...getDesktopSignInTarget(), active: false });
 
     this.broadcastRemoteServerConfigUpdated();
 
@@ -212,9 +226,6 @@ export default class RemoteServerConfigCtr extends ControllerModule {
    * Promise representing the ongoing token refresh operation.
    * Used to prevent concurrent refreshes and allow callers to wait.
    */
-  // Discard responses belonging to a session that was replaced while a refresh was in flight.
-  private tokenGeneration = 0;
-
   private refreshPromise: Promise<{ error?: string; success: boolean }> | null = null;
 
   /**
@@ -224,7 +235,6 @@ export default class RemoteServerConfigCtr extends ControllerModule {
    * @param expiresIn Token expiration time in seconds (optional)
    */
   async saveTokens(accessToken: string, refreshToken: string, expiresIn?: number) {
-    this.tokenGeneration++;
     logger.info('Saving encrypted tokens');
 
     // Calculate expiration time if provided
@@ -366,7 +376,6 @@ export default class RemoteServerConfigCtr extends ControllerModule {
    * Clear tokens
    */
   async clearTokens() {
-    this.tokenGeneration++;
     logger.info('Clearing access and refresh tokens');
     this.encryptedAccessToken = undefined;
     this.encryptedRefreshToken = undefined;
@@ -462,11 +471,6 @@ export default class RemoteServerConfigCtr extends ControllerModule {
    * This method is called by refreshAccessToken and wrapped in a promise.
    */
   private async performTokenRefresh(): Promise<{ error?: string; success: boolean }> {
-    const generation = this.tokenGeneration;
-    const ensureCurrentSession = () => {
-      if (generation !== this.tokenGeneration)
-        throw new Error('Session changed during token refresh');
-    };
     try {
       // Get configuration information
       const config = await this.getRemoteServerConfig();
@@ -503,13 +507,11 @@ export default class RemoteServerConfigCtr extends ControllerModule {
       };
       appendVercelCookie(headers);
       setDesktopUserAgentHeader(headers);
-      ensureCurrentSession();
       const response = await netFetch(tokenUrl.toString(), { body, headers, method: 'POST' });
 
       if (!response.ok) {
         // Try to parse error response
         const errorData = await response.json().catch(() => ({}));
-        ensureCurrentSession();
         // Keep the OIDC code so AuthCtr can distinguish revoked grants from transient failures.
         const errorDetail = [errorData.error, errorData.error_description]
           .filter(Boolean)
@@ -522,7 +524,6 @@ export default class RemoteServerConfigCtr extends ControllerModule {
 
       // Parse response
       const data = await response.json();
-      ensureCurrentSession();
 
       // Check if response contains necessary tokens
       if (!data.access_token || !data.refresh_token) {
@@ -578,10 +579,43 @@ export default class RemoteServerConfigCtr extends ControllerModule {
     return this.lastRefreshAt;
   }
 
+  // Before windows open: the main window picks onboarding vs app from this config.
+  beforeAppReady() {
+    const login = this.readDevRemoteLogin();
+    if (!login) return;
+    logger.info(`Dev login: signing in to ${login.remoteServerUrl}`);
+    this.app.storeManager.set('dataSyncConfig', {
+      active: true,
+      remoteServerUrl: login.remoteServerUrl,
+      storageMode: 'selfHost',
+    });
+    this.app.storeManager.set('desktopOnboardingCompleted', true);
+  }
+
   // Initialize by loading tokens from store when the controller is ready
   // We might need a dedicated lifecycle method if constructor is too early for storeManager
   afterAppReady() {
+    const login = this.readDevRemoteLogin();
+    // safeStorage encrypts only once the app is ready. No refresh token exists for a minted
+    // login; the access token outlives the dev session.
+    if (login) void this.saveTokens(login.accessToken, 'dev-login', login.expiresIn);
     this.loadTokensFromStore();
+  }
+
+  /**
+   * Dev builds only: a sign-in to a local server without the OAuth flow. The dev launcher
+   * (`electron-dev.sh start-local`) mints an access token with the local server's own signing key
+   * and points LOBE_DESKTOP_DEV_REMOTE_LOGIN at a file holding it. Tokens are then stored the
+   * normal way, so keychain encryption and the `lh` sign-in file stay the app's business.
+   */
+  private readDevRemoteLogin() {
+    const file = process.env.LOBE_DESKTOP_DEV_REMOTE_LOGIN;
+    if (!isDev || !file) return;
+    return JSON.parse(readFileSync(file, 'utf8')) as {
+      accessToken: string;
+      expiresIn: number;
+      remoteServerUrl: string;
+    };
   }
 
   async getRemoteServerUrl(config?: DataSyncConfig) {
@@ -609,16 +643,9 @@ export default class RemoteServerConfigCtr extends ControllerModule {
       async (details, callback) => {
         const requestHeaders = { ...details.requestHeaders };
 
-        const generation = this.tokenGeneration;
-        const config = await this.getRemoteServerConfig();
-        const token =
-          config.active &&
-          config.storageMode === 'cloud' &&
-          isOfficialCloudServer(OFFICIAL_CLOUD_SERVER)
-            ? await this.getAccessToken()
-            : null;
+        const token = await this.getAccessToken();
 
-        if (token && generation === this.tokenGeneration) {
+        if (token) {
           requestHeaders['Oidc-Auth'] = token;
           logger.debug(`Injected Oidc-Auth token for: ${details.url}`);
         }

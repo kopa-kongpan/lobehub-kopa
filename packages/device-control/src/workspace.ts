@@ -21,8 +21,6 @@ import type {
   WorkspaceScanDeps,
 } from './types';
 
-// Cap recursion to guard against pathological directory trees.
-const MAX_SKILL_FILE_COUNT = 1000;
 const DEFAULT_DIRECTORY_PAGE_SIZE = 200;
 const MAX_DIRECTORY_PAGE_SIZE = 1000;
 
@@ -122,36 +120,9 @@ const createSkillRoots = async (root: string): Promise<SkillScanRoot[]> => [
   ...createDeviceSkillRoots(),
 ];
 
-const toPosixRelativePath = (filePath: string) => filePath.split(path.sep).join('/');
-
-const listSkillFilesRecursive = async (dir: string): Promise<string[]> => {
-  const results: string[] = [];
-  const stack: string[] = [dir];
-
-  while (stack.length > 0 && results.length < MAX_SKILL_FILE_COUNT) {
-    const current = stack.pop()!;
-    let entries;
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(full);
-      } else if (entry.isFile()) {
-        results.push(toPosixRelativePath(path.relative(dir, full)));
-        if (results.length >= MAX_SKILL_FILE_COUNT) break;
-      }
-    }
-  }
-  return results.sort();
-};
-
 interface SkillFrontmatterFields {
   description?: string;
+  disableModelInvocation?: boolean;
   name?: string;
 }
 
@@ -169,6 +140,7 @@ const parseSkillFrontmatter = (raw: string): SkillFrontmatterFields => {
     const { data } = matter(raw) as { data: Record<string, unknown> };
     return {
       description: readStringField(data, 'description'),
+      disableModelInvocation: data['disable-model-invocation'] === true,
       name: readStringField(data, 'name'),
     };
   } catch {
@@ -176,17 +148,19 @@ const parseSkillFrontmatter = (raw: string): SkillFrontmatterFields => {
   }
 };
 
+type SkillCandidate = ProjectSkillItem & { realPath: string };
+
 /**
  * Scan one skill source directory and return parsed frontmatter for each
- * `SKILL.md`. Returns `[]` when the source directory is absent or unreadable.
- * Unsorted — callers sort/merge.
+ * `SKILL.md`. Once a directory contains `SKILL.md`, treat it as a skill root
+ * and do not recurse into its subdirectories (`scripts/`, `references/`, etc.).
+ * Returns `[]` when the source directory is absent or unreadable.
+ * Candidates are ordered by directory name to make alias precedence stable.
  */
-const scanSkillsInSource = async ({
-  previewRoot,
-  scope,
-  source,
-  sourceRoot,
-}: SkillScanRoot): Promise<ProjectSkillItem[]> => {
+const scanSkillsInSource = async (
+  { previewRoot, scope, source, sourceRoot }: SkillScanRoot,
+  seenRealPaths: ReadonlySet<string>,
+): Promise<(SkillCandidate | null)[]> => {
   let entries;
   try {
     entries = await readdir(sourceRoot, { withFileTypes: true });
@@ -194,23 +168,28 @@ const scanSkillsInSource = async ({
     return [];
   }
 
-  const skills = await Promise.all(
+  return Promise.all(
     entries
-      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
-      .map(async (entry): Promise<ProjectSkillItem | null> => {
+      .filter(
+        (entry) => !entry.name.startsWith('.') && (entry.isDirectory() || entry.isSymbolicLink()),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(async (entry): Promise<SkillCandidate | null> => {
         const skillDir = path.join(sourceRoot, entry.name);
         const skillFile = path.join(skillDir, 'SKILL.md');
         try {
+          const realPath = await realpath(skillFile);
+          if (seenRealPaths.has(realPath)) return null;
+
           const raw = await readFile(skillFile, 'utf8');
           const fields = parseSkillFrontmatter(raw);
-          const files = await listSkillFilesRecursive(skillDir);
           return {
             description: fields.description || undefined,
-            fileCount: files.length,
-            files,
+            disableModelInvocation: fields.disableModelInvocation,
             name: fields.name || entry.name,
             path: skillFile,
             previewRoot,
+            realPath,
             scope,
             skillDir,
             source,
@@ -220,19 +199,20 @@ const scanSkillsInSource = async ({
         }
       }),
   );
-
-  return skills.filter((skill): skill is ProjectSkillItem => skill !== null);
 };
 
 const collectSkills = async (roots: SkillScanRoot[]): Promise<ProjectSkillItem[]> => {
-  const seen = new Set<string>();
+  const seenNames = new Set<string>();
+  const seenRealPaths = new Set<string>();
   const skills: ProjectSkillItem[] = [];
 
   for (const root of roots) {
-    for (const skill of await scanSkillsInSource(root)) {
-      if (seen.has(skill.name)) continue;
-      seen.add(skill.name);
-      skills.push(skill);
+    for (const skill of await scanSkillsInSource(root, seenRealPaths)) {
+      if (!skill || seenNames.has(skill.name) || seenRealPaths.has(skill.realPath)) continue;
+      const { realPath, ...item } = skill;
+      seenNames.add(item.name);
+      seenRealPaths.add(realPath);
+      skills.push(item);
     }
   }
 

@@ -1,14 +1,17 @@
+import { eq, inArray } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
 import { ProjectRepository } from '../../repositories/project';
 import { ProjectDirectoryRepository } from '../../repositories/projectDirectory';
+import { ProjectEnvironmentRepository } from '../../repositories/projectEnvironment';
 import {
   agents,
   devices,
   environmentInstances,
   environments,
   projectEnvironments,
+  projects,
   users,
   workspaces,
 } from '../../schemas';
@@ -36,18 +39,34 @@ describe('project creation and its resources', () => {
   const repo = new ProjectRepository(serverDB, userId);
   const model = new ProjectModel(serverDB, userId);
 
+  // Only this file's own rows: other test files share the database and run at
+  // the same time, and their environments hold their users back.
+  const cleanup = async () => {
+    const own = serverDB
+      .select({ id: environments.id })
+      .from(environments)
+      .where(eq(environments.userId, userId));
+    await serverDB
+      .delete(projectEnvironments)
+      .where(inArray(projectEnvironments.environmentId, own));
+    await serverDB
+      .delete(environmentInstances)
+      .where(inArray(environmentInstances.environmentId, own));
+    await serverDB.delete(environments).where(eq(environments.userId, userId));
+    await serverDB.delete(projects).where(eq(projects.userId, userId));
+    await serverDB.delete(workspaces).where(eq(workspaces.id, workspaceId));
+    await serverDB.delete(users).where(eq(users.id, userId));
+  };
+
   beforeEach(async () => {
-    await serverDB.delete(users);
+    await cleanup();
     await serverDB.insert(users).values([{ id: userId }]);
   });
 
-  afterEach(async () => {
-    await serverDB.delete(projectEnvironments);
-    await serverDB.delete(environmentInstances);
-    await serverDB.delete(environments);
-    await serverDB.delete(workspaces);
-    await serverDB.delete(users);
-  });
+  afterEach(cleanup);
+
+  const environmentOf = (database: typeof serverDB, projectId: string, workspace?: string) =>
+    new ProjectEnvironmentRepository(database, userId, workspace).get(projectId);
 
   it('creates a runnable folder on the selected device and pins the project agent to it', async () => {
     const folder = { deviceId: 'office-mac', path: '/Users/test/Project' };
@@ -87,7 +106,7 @@ describe('project creation and its resources', () => {
       repo.create({ name: 'Unbound', folders: { deviceId: 'unknown', paths: ['/work'] } }),
     ).rejects.toThrow('Device not found');
     expect(await model.list()).toEqual([]);
-    expect(await serverDB.select().from(agents)).toEqual([]);
+    expect(await serverDB.select().from(agents).where(eq(agents.userId, userId))).toEqual([]);
   });
 
   it('attaches folders and links the existing agent without changing its configuration', async () => {
@@ -109,15 +128,21 @@ describe('project creation and its resources', () => {
 
     const project = await repo.create({
       coordinatorAgentId: agent.id,
-      folders: { deviceId: 'shared-mac', paths: ['/work/app'] },
+      folders: { deviceId: 'shared-mac', paths: ['/work/app', '/work/docs'] },
       name: 'App',
     });
 
     expect(project.coordinatorAgentId).toBe(agent.id);
-    expect(await serverDB.select().from(agents)).toEqual([agent]);
-    expect(await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id)).toEqual([
-      expect.objectContaining({ deviceId: 'shared-mac', path: '/work/app', runnable: true }),
-    ]);
+    expect(await serverDB.select().from(agents).where(eq(agents.userId, userId))).toEqual([agent]);
+    const directories = await new ProjectWorkingDirectoryModel(serverDB, userId).list(project.id);
+    expect(directories).toHaveLength(2);
+    expect(directories).toEqual(
+      expect.arrayContaining(
+        ['/work/app', '/work/docs'].map((path) =>
+          expect.objectContaining({ deviceId: 'shared-mac', path, runnable: true }),
+        ),
+      ),
+    );
   });
 
   it('rolls back earlier folders when a later folder cannot be bound to an existing project', async () => {
@@ -135,7 +160,7 @@ describe('project creation and its resources', () => {
     expect(after.map(({ path }) => path)).toEqual(['/work/original']);
   });
 
-  it('creates a project from a GitHub repository with its environment attached', async () => {
+  it('creates a project from a GitHub repository with its own environment checking it out', async () => {
     const project = await createProject(repo, {
       name: 'lobehub',
       repository: {
@@ -145,28 +170,74 @@ describe('project creation and its resources', () => {
       },
     });
 
-    expect(await model.listEnvironments(project.id)).toEqual([
+    const environment = await environmentOf(serverDB, project.id);
+    expect(environment).toEqual(
       expect.objectContaining({
         configuration: expect.objectContaining({
           kind: 'code',
           sources: [{ kind: 'git', ref: 'canary', url: 'https://github.com/lobehub/lobehub' }],
         }),
-        name: 'lobehub/lobehub',
+        name: 'lobehub',
+        projectId: project.id,
       }),
-    ]);
+    );
 
-    // A second project on the same repository shares the definition.
+    // A second project on the same repository gets an environment of its own.
     const second = await createProject(repo, {
       name: 'lobehub again',
       repository: { name: 'lobehub/lobehub', url: 'git@github.com:lobehub/lobehub.git' },
     });
-    const [first] = await model.listEnvironments(project.id);
-    expect(await model.listEnvironments(second.id)).toEqual([
-      expect.objectContaining({ id: first.id }),
+    const secondEnvironment = await environmentOf(serverDB, second.id);
+    expect(secondEnvironment.id).not.toBe(environment.id);
+    expect(secondEnvironment.projectId).toBe(second.id);
+  });
+
+  it('checks out more repositories beside the main one, side by side', async () => {
+    const project = await createProject(repo, {
+      additionalRepositories: [
+        { url: 'https://github.com/lobehub/lobe-ui' },
+        // The main one again is not checked out twice.
+        { url: 'git@github.com:lobehub/lobehub.git' },
+        { defaultBranch: 'main', url: 'https://github.com/lobehub/lobe-icons.git' },
+      ],
+      name: 'Monorepo and friends',
+      repository: {
+        defaultBranch: 'canary',
+        name: 'lobehub/lobehub',
+        url: 'https://github.com/lobehub/lobehub',
+      },
+    });
+
+    expect((await environmentOf(serverDB, project.id)).configuration.sources).toEqual([
+      { kind: 'git', path: 'lobehub', ref: 'canary', url: 'https://github.com/lobehub/lobehub' },
+      { kind: 'git', path: 'lobe-ui', url: 'https://github.com/lobehub/lobe-ui' },
+      {
+        kind: 'git',
+        path: 'lobe-icons',
+        ref: 'main',
+        url: 'https://github.com/lobehub/lobe-icons',
+      },
     ]);
   });
 
-  it('publishes the repository of a shared workspace project instead of reusing a private one', async () => {
+  it('creates an empty environment for a project made without a repository', async () => {
+    const project = await createProject(repo, { name: 'Notes' });
+
+    const links = await serverDB
+      .select()
+      .from(projectEnvironments)
+      .where(eq(projectEnvironments.projectId, project.id));
+    const environment = await environmentOf(serverDB, project.id);
+    expect(links).toEqual([
+      expect.objectContaining({ environmentId: environment.id, enabled: true, isDefault: true }),
+    ]);
+    expect(environment.configuration.sources ?? []).toEqual([]);
+    // Two projects of the same name do not collide on the environment name.
+    const again = await createProject(repo, { name: 'Notes', slug: 'notes-2' });
+    expect((await environmentOf(serverDB, again.id)).name).toBe('Notes');
+  });
+
+  it('publishes the environment of a shared workspace project and keeps a private one private', async () => {
     await serverDB.insert(workspaces).values({
       id: workspaceId,
       name: 'Repository Workspace',
@@ -174,13 +245,7 @@ describe('project creation and its resources', () => {
       slug: workspaceId,
     });
     const repository = { name: 'lobehub/lobehub', url: 'https://github.com/lobehub/lobehub' };
-    // The creator already checks the repository out privately.
-    const own = await new EnvironmentModel(serverDB, userId, workspaceId).ensureForRepository({
-      name: repository.name,
-      repositoryUrl: repository.url,
-    });
     const workspaceRepo = new ProjectRepository(serverDB, userId, workspaceId);
-    const workspaceModel = new ProjectModel(serverDB, userId, workspaceId);
 
     const shared = await createProject(workspaceRepo, {
       name: 'Shared',
@@ -193,12 +258,23 @@ describe('project creation and its resources', () => {
       visibility: 'private',
     });
 
-    const [sharedEnvironment] = await workspaceModel.listEnvironments(shared.id);
-    expect(sharedEnvironment).toEqual(expect.objectContaining({ visibility: 'public' }));
-    expect(sharedEnvironment.id).not.toBe(own.id);
-    expect(await workspaceModel.listEnvironments(privateProject.id)).toEqual([
-      expect.objectContaining({ id: own.id, visibility: 'private' }),
-    ]);
+    expect(await environmentOf(serverDB, shared.id, workspaceId)).toEqual(
+      expect.objectContaining({ visibility: 'public' }),
+    );
+    expect(await environmentOf(serverDB, privateProject.id, workspaceId)).toEqual(
+      expect.objectContaining({ visibility: 'private' }),
+    );
+    // Neither shows up among the standalone environments of「设置 → 环境」.
+    expect(await new EnvironmentModel(serverDB, userId, workspaceId).query()).toEqual([]);
+  });
+
+  it('removes an unbuilt environment with its project', async () => {
+    const project = await createProject(repo, { name: 'Short lived' });
+    await environmentOf(serverDB, project.id);
+
+    await repo.delete(project.id);
+
+    expect(await serverDB.select().from(environments)).toEqual([]);
   });
 
   it('names the unique index a taken slug violates, so the router can map it', async () => {

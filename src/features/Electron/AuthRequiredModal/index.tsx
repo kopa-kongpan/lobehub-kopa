@@ -1,6 +1,5 @@
 'use client';
 
-import { getDesktopSignInTarget } from '@lobechat/const/desktop';
 import { useWatchBroadcast } from '@lobechat/electron-client-ipc';
 import type { ImperativeModalProps, ModalInstance } from '@lobehub/ui';
 import { Button, createModal, Flexbox, Icon, ModalFooter } from '@lobehub/ui';
@@ -39,7 +38,10 @@ const AuthRequiredModalContent = memo<AuthRequiredModalContentProps>(
       setIsSigningIn(true);
       clearRemoteServerSyncError();
 
-      await connectRemoteServer(getDesktopSignInTarget(dataSyncConfig));
+      await connectRemoteServer({
+        remoteServerUrl: dataSyncConfig?.remoteServerUrl,
+        storageMode: dataSyncConfig?.storageMode || 'cloud',
+      });
     }, [clearRemoteServerSyncError, connectRemoteServer, dataSyncConfig]);
 
     useEffect(() => {
